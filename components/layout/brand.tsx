@@ -25,7 +25,7 @@ export function Logo({
             tone === "light" ? "text-foreground" : "text-white",
           )}
         >
-          FreshRoute<span className={cn(storefront ? "text-[#8dac72]" : "hidden")}>.</span>
+          TradeLoop<span className={cn(storefront ? "text-[#8dac72]" : "hidden")}>.</span>
         </span>
         <span
           className={cn(

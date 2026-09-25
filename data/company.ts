@@ -1,12 +1,12 @@
 import type { Helper, StaffMember } from "@/types";
 
-/** The demo clock. All "today" logic in FreshRoute is anchored here so the data stays consistent. */
+/** The demo clock. All "today" logic in TradeLoop is anchored here so the data stays consistent. */
 export const TODAY = "2026-09-25";
 export const NOW = "2026-09-25T07:48";
 export const TOMORROW = "2026-09-26";
 
 export const PLATFORM = {
-  name: "FreshRoute",
+  name: "TradeLoop",
   tagline: "Wholesale Trading & Logistics, Connected.",
 };
 

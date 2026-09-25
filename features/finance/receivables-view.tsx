@@ -119,7 +119,7 @@ export function ReceivablesView() {
 
   return (
     <>
-      <PageHeader title="Accounts Receivable" description="Who owes what, and for how long. Payments recorded anywhere in FreshRoute reduce these balances immediately." />
+      <PageHeader title="Accounts Receivable" description="Who owes what, and for how long. Payments recorded anywhere in TradeLoop reduce these balances immediately." />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Card className="col-span-2 gap-1 bg-[oklch(0.25_0.04_220)] p-4 text-white md:col-span-1">

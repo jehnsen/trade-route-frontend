@@ -135,7 +135,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       </header>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className="portal w-80 p-6">
-          <SheetTitle className="sr-only">FreshRoute menu</SheetTitle>
+          <SheetTitle className="sr-only">TradeLoop menu</SheetTitle>
           <SheetDescription className="sr-only">Explore products, delivery information and your business account.</SheetDescription>
           <Link href="/" onClick={() => setOpen(false)}>
             <Logo tone="light" storefront />
@@ -178,7 +178,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       <footer className="bg-[#112e2c] text-[#b6c8bc]">
         <div className="portal-container grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-[1.4fr_0.8fr_1fr_1fr]">
           <div>
-            <Link href="/" aria-label="FreshRoute home">
+            <Link href="/" aria-label="TradeLoop home">
               <Logo storefront />
             </Link>
             <p className="mt-5 max-w-[235px] text-xs leading-6">
@@ -188,7 +188,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             <p className="mt-4 text-[10px] text-[#839d8c]">{COMPANY.name}</p>
           </div>
           <div>
-            <h2 className="mb-5 text-[11px] font-semibold text-white">Explore FreshRoute</h2>
+            <h2 className="mb-5 text-[11px] font-semibold text-white">Explore TradeLoop</h2>
             <div className="grid gap-3 text-xs">
               {[
                 { href: "/products?category=seafood", label: "Fresh seafood" },
@@ -236,7 +236,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="border-t border-white/10">
           <div className="portal-container flex flex-wrap items-center justify-between gap-4 py-5 text-[10px] text-[#839d8c]">
-            <p>FreshRoute · Rooted in Quezon. Connected by trade.</p>
+            <p>TradeLoop · Rooted in Quezon. Connected by trade.</p>
             <div className="flex items-center gap-4">
               <Link href="/dashboard" className="hover:text-white">
                 Staff workspace

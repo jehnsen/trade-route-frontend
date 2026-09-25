@@ -284,7 +284,7 @@ export function DashboardView() {
         <CardHeader>
           <div>
             <CardTitle>Business health — last 30 days</CardTitle>
-            <CardDescription>Since FreshRoute go-live on Aug 26, 2026</CardDescription>
+            <CardDescription>Since TradeLoop go-live on Aug 26, 2026</CardDescription>
           </div>
         </CardHeader>
         <CardContent>

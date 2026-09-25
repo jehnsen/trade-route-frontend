@@ -130,7 +130,7 @@ export function PortalHome() {
         </div>
       </section>
 
-      <section className="border-b border-[#e2e7df] bg-[#f8f9f4]" aria-label="The FreshRoute difference">
+      <section className="border-b border-[#e2e7df] bg-[#f8f9f4]" aria-label="The TradeLoop difference">
         <div className="portal-container grid grid-cols-2 gap-x-6 gap-y-7 py-8 lg:grid-cols-4 lg:gap-8">
           {[
             { icon: Fish, title: "Closer to the source", text: "Seafood from Quezon's coastal farms" },

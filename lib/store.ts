@@ -507,8 +507,8 @@ export const useAppStore = create<DataState & Actions>()(
       };
     },
     {
-      name: "freshroute-demo-v3",
-      version: 3,
+      name: "tradeloop-demo-v1",
+      version: 1,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       partialize: (s) => ({

@@ -1,5 +1,5 @@
 /**
- * FreshRoute demo data generator.
+ * TradeLoop demo data generator.
  *
  * Builds 30 days of operating history plus today's (Fri, Sep 25 2026) live operations and
  * tomorrow's dispatch plan. Everything is derived from the static reference data (customers,
@@ -614,7 +614,7 @@ for (let date = START; date < TODAY; date = addDaysISO(date, 1)) {
 
 // Opening balances migrated from the paper ledger at go-live (Aug 26). These are the only
 // receivables older than the 30-day operating window.
-const GO_LIVE_NOTE = "Opening balance migrated from paper ledger at FreshRoute go-live (Aug 26, 2026).";
+const GO_LIVE_NOTE = "Opening balance migrated from paper ledger at TradeLoop go-live (Aug 26, 2026).";
 const OPENING: [customerId: string, date: string, lines: [string, number, number][], paid: number, paidOn?: string][] = [
   ["CUS-002", "2026-07-17", [["P-SUG-L", 120, 450]], 20000, "2026-09-03"],
   ["CUS-002", "2026-08-07", [["P-SUG-L", 90, 455], ["P-HIP-W", 60, 330]], 0],

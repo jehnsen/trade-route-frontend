@@ -208,7 +208,7 @@ export function SettingsView() {
                 <Clock className="size-4 text-muted-foreground" /> Demo clock fixed at <b>{fmtDateTime(NOW)}</b>
               </div>
               <div className="flex items-center gap-2">
-                <Sparkles className="size-4 text-muted-foreground" /> FreshRoute go-live: Aug 26, 2026 — balances before that date were migrated from the paper ledger.
+                <Sparkles className="size-4 text-muted-foreground" /> TradeLoop go-live: Aug 26, 2026 — balances before that date were migrated from the paper ledger.
               </div>
               <p className="text-muted-foreground">Orders, payments, POs and leads you create are saved in this browser only. Prices are illustrative, not live market prices.</p>
               <ConfirmDialog

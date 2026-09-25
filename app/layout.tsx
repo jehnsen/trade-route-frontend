@@ -7,10 +7,10 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "sw
 
 export const metadata: Metadata = {
   title: {
-    default: "FreshRoute — Wholesale Trading & Logistics, Connected.",
-    template: "%s · FreshRoute",
+    default: "TradeLoop — Wholesale Trading & Logistics, Connected.",
+    template: "%s · TradeLoop",
   },
-  description: "FreshRoute runs Lucena Fresh Trading & Logistics: orders, dispatch, deliveries, procurement, backhaul, collections and reporting in one place.",
+  description: "TradeLoop runs Lucena Fresh Trading & Logistics: orders, dispatch, deliveries, procurement, backhaul, collections and reporting in one place.",
   icons: { icon: "/favicon.svg" },
 };
 

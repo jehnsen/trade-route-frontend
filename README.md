@@ -1,6 +1,6 @@
-# FreshRoute — Wholesale Trading & Logistics, Connected.
+# TradeLoop — Wholesale Trading & Logistics, Connected.
 
-Frontend demo of FreshRoute for **Lucena Fresh Trading & Logistics** (Lucena City, Quezon): orders from Messenger, phone, Facebook, sales staff and the customer portal flow into one system → inventory → dispatch → deliveries → backhaul procurement → collections → reports.
+Frontend demo of TradeLoop for **Lucena Fresh Trading & Logistics** (Lucena City, Quezon): orders from Messenger, phone, Facebook, sales staff and the customer portal flow into one system → inventory → dispatch → deliveries → backhaul procurement → collections → reports.
 
 No backend. All data is fictional, generated deterministically in `data/seed.ts`, and stored client-side (Zustand, persisted to `localStorage`). The demo clock is fixed at **Fri, Sep 25, 2026 · 7:48 AM**.
 

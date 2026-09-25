@@ -125,7 +125,7 @@ export const FUTURE_MODULES: FutureModule[] = [
   { slug: "ai-demand-forecasting", label: "AI Demand Forecasting", icon: Brain, summary: "Forecast next week's demand per customer and product using order history and seasonality.", bullets: ["Holiday and fiesta seasonality", "Standing-order drift detection", "Suggested procurement quantities"] },
   { slug: "price-intelligence", label: "Price Intelligence", icon: LineChart, summary: "Track supplier quotes and selling prices over time to protect margins.", bullets: ["Supplier price history per product", "Margin alerts when costs spike", "Suggested selling-price bands"] },
   { slug: "inter-island-logistics", label: "Inter-Island Logistics", icon: Ship, summary: "Manage reefer bookings, vessel schedules and waybills for Visayas and Mindanao buyers.", bullets: ["Partner reefer booking and tracking", "Port charges and landed-cost calculator", "Consignee arrival confirmation"] },
-  { slug: "api-integrations", label: "API Integrations", icon: Plug, summary: "Connect FreshRoute to accounting software, GCash/Maya collections and Messenger.", bullets: ["Accounting export (sales & AR)", "E-wallet payment matching", "Messenger order capture"] },
+  { slug: "api-integrations", label: "API Integrations", icon: Plug, summary: "Connect TradeLoop to accounting software, GCash/Maya collections and Messenger.", bullets: ["Accounting export (sales & AR)", "E-wallet payment matching", "Messenger order capture"] },
 ];
 
 export const ROLE_META: Record<Role, { label: string; description: string; home: string; icon: LucideIcon }> = {

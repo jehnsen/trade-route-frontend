@@ -6,7 +6,7 @@ export default function NotFound() {
     <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-background px-6 text-center">
       <div className="text-sm font-semibold text-primary">404</div>
       <h1 className="text-2xl font-semibold">Page not found</h1>
-      <p className="max-w-md text-muted-foreground">The page you&apos;re looking for doesn&apos;t exist in FreshRoute.</p>
+      <p className="max-w-md text-muted-foreground">The page you&apos;re looking for doesn&apos;t exist in TradeLoop.</p>
       <div className="flex gap-2">
         <Button asChild>
           <Link href="/dashboard">Go to dashboard</Link>

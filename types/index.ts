@@ -1,4 +1,4 @@
-// FreshRoute domain types. Dates are stored as local ISO strings:
+// TradeLoop domain types. Dates are stored as local ISO strings:
 // "YYYY-MM-DD" for dates and "YYYY-MM-DDTHH:mm" for date-times.
 
 export type ISODate = string;

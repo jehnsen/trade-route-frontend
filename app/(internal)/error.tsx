@@ -12,7 +12,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
       title="Something went wrong loading this page"
       description={
         <>
-          The rest of FreshRoute is still available. If this keeps happening, reset the demo data from the Demo Data badge.
+          The rest of TradeLoop is still available. If this keeps happening, reset the demo data from the Demo Data badge.
           {error.digest && <span className="mt-1 block text-xs">Reference: {error.digest}</span>}
         </>
       }

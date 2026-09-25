@@ -116,6 +116,45 @@ const ICONS: Record<Product["icon"], React.ComponentType<IconProps>> = {
   "sweet-potato": SweetPotato,
 };
 
+/**
+ * Real product photographs, one per product SKU (variants of the same species share a file).
+ * Sourced from Wikimedia Commons / openly-licensed market photography to match each product's
+ * real-world origin (Navotas/Pagbilao seafood, Benguet & Manila-return produce, Quezon crops).
+ * Falls back to the illustrated icon below for any product not listed here.
+ */
+const PHOTOS: Record<string, string> = {
+  "P-SUG-J": "prawns.webp",
+  "P-SUG-L": "prawns.webp",
+  "P-SUG-M": "prawns.webp",
+  "P-HIP-S": "hipon.jpg",
+  "P-HIP-W": "hipon.jpg",
+  "P-TAH": "mussels.webp",
+  "P-TAH-C": "mussels.webp",
+  "P-TAL": "talaba.jpg",
+  "P-TAL-S": "talaba.jpg",
+  "P-ALI-F": "alimango.jpg",
+  "P-ALI-M": "alimango.jpg",
+  "P-BAN": "bangus.jpg",
+  "P-BAN-XL": "bangus.jpg",
+  "P-TIL": "tilapia.jpg",
+  "P-PUS": "pusit.jpg",
+  "P-TUL": "tulingan.jpg",
+  "P-ONR": "onions.webp",
+  "P-ONW": "onion-white.jpg",
+  "P-GAR": "garlic.webp",
+  "P-GAR-N": "garlic.webp",
+  "P-GIN": "ginger.jpg",
+  "P-TOM": "tomato.jpg",
+  "P-POT": "potato.jpg",
+  "P-CAR": "carrot.jpg",
+  "P-CAB": "cabbage.jpg",
+  "P-CAL": "calamansi.jpg",
+  "P-NIY": "coconut.jpg",
+  "P-SAB": "saba.webp",
+  "P-KAM": "kamote.jpg",
+  "P-SIL": "siling.jpg",
+};
+
 const TONES: Record<string, string> = {
   shrimp: "from-orange-100 to-rose-50 text-orange-600",
   shell: "from-emerald-100 to-slate-50 text-emerald-700",
@@ -156,20 +195,12 @@ export function ProductImage({
     xl: "aspect-[4/3] w-full rounded-xl",
   }[size];
   const icon = { xs: "size-4", sm: "size-5", md: "size-6", lg: "size-16", xl: "size-24" }[size];
-  const photo = product.id.startsWith("P-SUG-")
-    ? "prawns"
-    : product.id.startsWith("P-TAH")
-      ? "mussels"
-      : product.id === "P-ONR"
-        ? "onions"
-        : product.id === "P-GAR"
-          ? "garlic"
-          : undefined;
+  const photo = PHOTOS[product.id];
   if (photo) {
     return (
       <div className={cn("relative shrink-0 overflow-hidden bg-[#f0f1e9]", box, className)}>
         <Image
-          src={`/images/${photo}.webp`}
+          src={`/images/${photo}`}
           alt={`${product.name} — illustrative product photograph`}
           fill
           sizes={
