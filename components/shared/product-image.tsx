@@ -1,4 +1,5 @@
 import { Banana, Carrot, Citrus, Fish, LeafyGreen, Shell, Shrimp } from "lucide-react";
+import Image from "next/image";
 import type { Product } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -6,7 +7,16 @@ type IconProps = { className?: string };
 const svg = (paths: React.ReactNode) =>
   function Icon({ className }: IconProps) {
     return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+        aria-hidden
+      >
         {paths}
       </svg>
     );
@@ -127,7 +137,15 @@ const TONES: Record<string, string> = {
   "sweet-potato": "from-orange-100 to-rose-50 text-orange-700",
 };
 
-export function ProductImage({ product, size = "md", className }: { product: Product; size?: "xs" | "sm" | "md" | "lg" | "xl"; className?: string }) {
+export function ProductImage({
+  product,
+  size = "md",
+  className,
+}: {
+  product: Product;
+  size?: "xs" | "sm" | "md" | "lg" | "xl";
+  className?: string;
+}) {
   const Icon = ICONS[product.icon];
   const tone = TONES[product.id === "P-ONW" ? "onion-white" : product.icon];
   const box = {
@@ -138,8 +156,40 @@ export function ProductImage({ product, size = "md", className }: { product: Pro
     xl: "aspect-[4/3] w-full rounded-xl",
   }[size];
   const icon = { xs: "size-4", sm: "size-5", md: "size-6", lg: "size-16", xl: "size-24" }[size];
+  const photo = product.id.startsWith("P-SUG-")
+    ? "prawns"
+    : product.id.startsWith("P-TAH")
+      ? "mussels"
+      : product.id === "P-ONR"
+        ? "onions"
+        : product.id === "P-GAR"
+          ? "garlic"
+          : undefined;
+  if (photo) {
+    return (
+      <div className={cn("relative shrink-0 overflow-hidden bg-[#f0f1e9]", box, className)}>
+        <Image
+          src={`/images/${photo}.webp`}
+          alt={`${product.name} — illustrative product photograph`}
+          fill
+          sizes={
+            size === "xl"
+              ? "(max-width: 767px) 100vw, 580px"
+              : size === "lg"
+                ? "(max-width: 639px) 100vw, (max-width: 1023px) 50vw, 300px"
+                : "48px"
+          }
+          className="object-cover"
+        />
+      </div>
+    );
+  }
   return (
-    <div className={cn("relative flex shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br", tone, box, className)} role="img" aria-label={`${product.name} ${product.variant ?? ""}`}>
+    <div
+      className={cn("relative flex shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br", tone, box, className)}
+      role="img"
+      aria-label={`${product.name} ${product.variant ?? ""}`}
+    >
       {(size === "lg" || size === "xl") && (
         <svg className="absolute inset-0 size-full opacity-[0.12]" aria-hidden>
           <defs>
