@@ -124,6 +124,73 @@
   scrollbar-width: thin;
 }
 
+/* Admin workspace: quiet surfaces, harbor green accents, and readable data. */
+.admin-shell {
+  --background: #f5f7f8;
+  --foreground: #20312e;
+  --card-foreground: #20312e;
+  --primary: #216c58;
+  --primary-foreground: #ffffff;
+  --muted: #f0f3f3;
+  --muted-foreground: #6e7c79;
+  --accent: #edf5f0;
+  --accent-foreground: #216c58;
+  --border: #e3e9e7;
+  --input: #d9e2df;
+  --ring: #408b74;
+  --sidebar: #152e2b;
+  --sidebar-foreground: #c7d5d0;
+  --sidebar-muted: #8fa8a0;
+  --sidebar-accent: #203d37;
+  --sidebar-active: #2a5346;
+  --sidebar-border: #2c443d;
+  --chart-grid: #e9eeeb;
+  --chart-axis: #7b8983;
+}
+
+.admin-shell [data-slot="card"] {
+  min-width: 0;
+  border-radius: 14px;
+  box-shadow: 0 2px 4px -2px rgb(25 48 40 / 4%);
+}
+
+.admin-shell .page-header {
+  margin-bottom: 1.5rem;
+}
+
+.admin-shell .page-header h1 {
+  font-size: clamp(1.4rem, 2.2vw, 1.75rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.admin-shell :where(a, button, summary):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.admin-shell aside nav {
+  scrollbar-color: #3d5c50 transparent;
+}
+
+.dashboard-metric {
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.dashboard-metric:hover {
+  box-shadow: 0 4px 16px -6px rgb(25 48 40 / 12%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell *,
+  .admin-shell *::before,
+  .admin-shell *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* The storefront pairs a harbor palette with the warmth of a local produce market. */
 .portal {
   --background: #fafbf7;

@@ -3,14 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, FlaskConical, Lock, Menu, RotateCcw, Search, Sparkles } from "lucide-react";
+import { ArrowUpRight, Building2, ChevronDown, ChevronRight, FlaskConical, Lock, Menu, RotateCcw, Search, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import type { Role } from "@/types";
 import { cn } from "@/lib/utils";
 import { NAV, FUTURE_MODULES, ROLE_META, canAccess } from "@/lib/nav";
 import { useAppStore, actorFor } from "@/lib/store";
 import { useInvoices } from "@/hooks/use-data";
-import { TODAY, TOMORROW } from "@/data/company";
+import { COMPANY, TODAY, TOMORROW } from "@/data/company";
 import { unassignedTruckOrders } from "@/lib/selectors";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,19 +49,35 @@ function useNavBadges() {
 }
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+  const navId = React.useId();
   const pathname = usePathname();
   const role = useAppStore((s) => s.role);
   const badges = useNavBadges();
   const [futureOpen, setFutureOpen] = React.useState(pathname.startsWith("/future"));
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({ "Sales & CRM": true, Logistics: true, Finance: true });
+  React.useEffect(() => {
+    const section = NAV.find((group) => group.items.some((item) => pathname === item.href || pathname.startsWith(item.href + "/")));
+    if (section) setExpanded((value) => ({ ...value, [section.label]: true }));
+  }, [pathname]);
   return (
-    <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4 scrollbar-thin" aria-label="Main">
+    <nav className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-5 scrollbar-thin" aria-label="Main">
       {NAV.map((section) => {
         const items = section.items.filter((i) => i.roles.includes(role) || role === "owner");
         if (!items.length) return null;
+        const isCurrentSection = items.some((item) => pathname === item.href || pathname.startsWith(item.href + "/"));
+        const open = section.label === "Overview" || (expanded[section.label] ?? isCurrentSection);
+        const sectionId = `${navId}-${section.label.toLowerCase().replace(/[^a-z]+/g, "-")}`;
         return (
           <div key={section.label}>
-            <div className="px-2 pb-1 text-[10.5px] font-semibold tracking-wider text-sidebar-muted uppercase">{section.label}</div>
-            <ul className="grid gap-0.5">
+            {section.label === "Overview" ? (
+              <div className="px-3 pb-2 text-[10px] font-semibold tracking-[0.14em] text-sidebar-muted uppercase">Workspace</div>
+            ) : (
+              <button type="button" onClick={() => setExpanded((value) => ({ ...value, [section.label]: !open }))} aria-expanded={open} aria-controls={sectionId} className="flex w-full cursor-pointer items-center justify-between px-3 pb-2 text-[10px] font-semibold tracking-[0.12em] text-sidebar-muted uppercase hover:text-white">
+                {section.label}
+                <ChevronDown className={cn("size-3 transition-transform", !open && "-rotate-90")} />
+              </button>
+            )}
+            <ul id={sectionId} className={cn("grid gap-1", !open && "hidden")}>
               {items.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(item.href + "/");
                 const count = item.badgeKey ? badges[item.badgeKey] : 0;
@@ -72,14 +88,14 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                       onClick={onNavigate}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13.5px] font-medium transition-colors",
-                        active ? "bg-sidebar-active text-white shadow-sm" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
+                        "group relative flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
+                        active ? "bg-sidebar-active text-white shadow-sm ring-1 ring-white/10" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
                       )}
                     >
-                      <item.icon className={cn("size-4 shrink-0", active ? "text-white" : "text-sidebar-muted group-hover:text-white")} />
+                      <item.icon className={cn("size-[17px] shrink-0", active ? "text-[#b7e6d4]" : "text-sidebar-muted group-hover:text-white")} strokeWidth={1.7} />
                       <span className="flex-1 truncate">{item.label}</span>
                       {count > 0 && (
-                        <span className={cn("rounded-full px-1.5 text-[10.5px] font-semibold tabular", item.badgeKey === "overdue" ? "bg-[oklch(0.56_0.2_25)] text-white" : active ? "bg-white/25 text-white" : "bg-white/10 text-sidebar-foreground")}>
+                        <span className={cn("min-w-5 rounded-md px-1.5 py-0.5 text-center text-[10px] font-semibold tabular", item.badgeKey === "overdue" ? "bg-[#613b35] text-[#ffd2c6]" : active ? "bg-white/15 text-white" : "bg-white/8 text-sidebar-foreground")}>
                           {count}
                         </span>
                       )}
@@ -92,7 +108,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
         );
       })}
       <div>
-        <button type="button" onClick={() => setFutureOpen((v) => !v)} className="flex w-full items-center justify-between px-2 pb-1 text-[10.5px] font-semibold tracking-wider text-sidebar-muted uppercase hover:text-white cursor-pointer" aria-expanded={futureOpen}>
+        <button type="button" onClick={() => setFutureOpen((v) => !v)} className="flex w-full items-center justify-between px-3 pb-1 text-[10px] font-semibold tracking-[0.12em] text-sidebar-muted uppercase hover:text-white cursor-pointer" aria-expanded={futureOpen}>
           Future Modules
           <ChevronDown className={cn("size-3.5 transition-transform", futureOpen && "rotate-180")} />
         </button>
@@ -120,20 +136,26 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <div className="flex h-full flex-col bg-sidebar">
-      <div className="flex h-14 items-center px-4">
+    <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
+      <div className="flex h-[76px] shrink-0 items-center px-6">
         <Link href="/command-center" onClick={onNavigate}>
           <Logo />
         </Link>
       </div>
-      <div className="mx-3 mb-3 rounded-lg border border-sidebar-border bg-sidebar-accent/60 px-3 py-2 text-[11.5px] leading-snug text-sidebar-foreground">
-        <div className="flex items-center gap-1.5 font-semibold text-white">
-          <Sparkles className="size-3.5 text-[#9be3d9]" /> Central Order System
+      <div className="mx-4 mb-6 flex items-center gap-3 rounded-xl border border-sidebar-border bg-white/4 px-3 py-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[#b7d6ca]"><Building2 className="size-4" /></span>
+        <div className="min-w-0">
+          <div className="truncate text-xs font-medium text-white">{COMPANY.shortName}</div>
+          <div className="mt-1 text-[10px] text-sidebar-muted">Trading & logistics workspace</div>
         </div>
-        Messenger, phone, Facebook and portal orders all land here.
       </div>
       <NavLinks onNavigate={onNavigate} />
-      <div className="border-t border-sidebar-border px-4 py-3 text-[11px] text-sidebar-muted">Lucena Fresh Trading & Logistics · Phase 1</div>
+      <div className="shrink-0 border-t border-sidebar-border p-4">
+        <Link href="/" onClick={onNavigate} className="group flex items-center justify-between rounded-lg px-3 py-2 text-xs text-sidebar-foreground hover:bg-sidebar-accent hover:text-white">
+          <span>Visit customer storefront</span><ArrowUpRight className="size-4 text-sidebar-muted group-hover:text-white" />
+        </Link>
+        <div className="mt-2 px-3 text-[10px] text-sidebar-muted">Lucena City, Quezon · Philippines</div>
+      </div>
     </div>
   );
 }
@@ -159,9 +181,9 @@ export function RoleSwitcher({ compact }: { compact?: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="flex items-center gap-2 rounded-lg border bg-card px-1.5 py-1 text-left hover:bg-accent cursor-pointer" aria-label="Switch demo role">
-          <Avatar className="size-7">
-            <AvatarFallback className="bg-primary text-[11px] text-white">{initials}</AvatarFallback>
+        <button type="button" className="flex min-h-10 items-center gap-2.5 rounded-lg px-1.5 py-1 text-left hover:bg-accent cursor-pointer" aria-label="Switch demo role">
+          <Avatar className="size-8 border border-primary/15">
+            <AvatarFallback className="bg-accent text-[11px] font-semibold text-primary">{initials}</AvatarFallback>
           </Avatar>
           {!compact && (
             <span className="hidden pr-1 leading-tight md:block">
@@ -248,6 +270,9 @@ function RoleGate({ children }: { children: React.ReactNode }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const pathname = usePathname();
+  const currentSection = NAV.find((section) => section.items.some((item) => pathname === item.href || pathname.startsWith(item.href + "/")));
+  const currentPage = currentSection?.items.find((item) => pathname === item.href || pathname.startsWith(item.href + "/"));
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -261,35 +286,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-dvh bg-background">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 lg:block no-print">
+    <div className="admin-shell min-h-dvh bg-background">
+      <a href="#main-content" className="sr-only fixed top-3 left-3 z-50 rounded-lg bg-primary px-4 py-2 text-sm text-white focus:not-sr-only">Skip to content</a>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block no-print">
         <SidebarBody />
       </aside>
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-64 max-w-[80%] border-0 p-0 [&>button]:text-white">
+        <SheetContent side="left" className="admin-shell w-72 max-w-[85%] border-0 p-0 [&>button]:text-white">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <SidebarBody onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
-      <div className="lg:pl-60">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-card/95 px-3 backdrop-blur sm:px-5 no-print">
+      <div className="lg:pl-64">
+        <header className="sticky top-0 z-20 flex h-[76px] items-center gap-3 border-b bg-card px-4 sm:px-7 lg:px-8 no-print">
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation">
             <Menu />
           </Button>
+          <div className="hidden min-w-0 items-center gap-2.5 text-xs xl:flex">
+            <span className="text-muted-foreground">{currentSection?.label ?? "Workspace"}</span>
+            <ChevronRight className="size-3.5 text-muted-foreground/60" />
+            <span className="truncate font-medium">{currentPage?.label ?? "Overview"}</span>
+          </div>
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/50 px-3 text-sm text-muted-foreground hover:bg-muted sm:max-w-md cursor-pointer"
+            className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-transparent bg-muted/70 px-3 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted sm:max-w-sm xl:ml-auto xl:max-w-[280px] cursor-pointer"
           >
             <Search className="size-4 shrink-0" />
             <span className="truncate">
               <span className="sm:hidden">Search</span>
-              <span className="hidden sm:inline">Search orders, customers, trips, invoices…</span>
+              <span className="hidden sm:inline">Search anything…</span>
             </span>
-            <kbd className="ml-auto hidden rounded border bg-card px-1.5 text-[10px] font-medium sm:inline">Ctrl K</kbd>
+            <kbd className="ml-auto hidden whitespace-nowrap rounded border bg-card px-1.5 py-0.5 text-[10px] font-medium sm:inline">⌘ / Ctrl K</kbd>
           </button>
-          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-            <span className="hidden text-xs text-muted-foreground xl:inline">Fri, Sep 25, 2026 · 7:48 AM</span>
+          <div className="ml-auto flex shrink-0 items-center gap-2 xl:ml-0 sm:gap-3">
             <span className="hidden sm:inline-flex">
               <DemoBadge />
             </span>
@@ -297,7 +327,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <RoleSwitcher />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-[1500px] px-3 py-5 sm:px-5 lg:px-6">
+        <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-6 outline-none sm:px-7 sm:py-8 lg:px-8">
           <div className="mb-3 sm:hidden">
             <DemoBadge />
           </div>
@@ -308,4 +338,3 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-

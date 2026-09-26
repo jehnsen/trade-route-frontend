@@ -31,7 +31,7 @@ export interface Crumb {
 }
 export function PageHeader({ title, description, breadcrumbs, actions, children }: { title: React.ReactNode; description?: React.ReactNode; breadcrumbs?: Crumb[]; actions?: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <div className="mb-5 flex flex-col gap-3">
+    <div className="page-header mb-5 flex flex-col gap-3">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
           {breadcrumbs.map((c, i) => (

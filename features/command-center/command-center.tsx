@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, CircleDollarSign, ClipboardList, Clock, HandCoins, Inbox, PackageCheck, PackageOpen, Truck, Undo2, Warehouse, Home, ShoppingCart, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, CircleDollarSign, ClipboardList, Clock, HandCoins, Inbox, LayoutDashboard, PackageCheck, PackageOpen, Plus, Truck, Undo2, Warehouse, Home, type LucideIcon } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useCustomerStats, useInvoices, useStock, useTripMetrics } from "@/hooks/use-data";
 import { TODAY, TOMORROW, NOW } from "@/data/company";
@@ -106,20 +106,23 @@ export function CommandCenter() {
   return (
     <>
       <PageHeader
-        title="Operations Command Center"
+        title="Command center"
         description={
           <>
-            Friday, Sep 25 · live as of <b className="text-foreground">{fmtTime(NOW)}</b> — orders, stock, trucks, backhaul and collections on one screen.
+            Your daily operations, connected. <span className="whitespace-nowrap">Demo snapshot · {fmtTime(NOW)}</span>
           </>
         }
         actions={
           <>
             <Button variant="outline" asChild>
+              <Link href="/dashboard"><LayoutDashboard /> Overview</Link>
+            </Button>
+            <Button variant="outline" asChild>
               <Link href="/dispatch">Dispatch Board</Link>
             </Button>
             <Button asChild>
               <Link href="/orders/new">
-                <ShoppingCart /> New Order
+                <Plus /> Create order
               </Link>
             </Button>
           </>
@@ -127,11 +130,11 @@ export function CommandCenter() {
       />
 
       {/* Headline numbers */}
-      <div className="grid gap-3 md:grid-cols-4">
-        <Card className="bg-[oklch(0.25_0.04_220)] p-4 text-white md:col-span-2">
-          <div className="text-[13px] text-white/70">Today&apos;s sales (booked for delivery Sep 25)</div>
-          <div className="mt-1 text-4xl font-semibold tracking-tight tabular">{peso(todaySales)}</div>
-          <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="border-[#21604e] bg-[#21604e] p-5 text-white md:col-span-2 sm:p-6">
+          <div className="flex items-center justify-between gap-3 text-xs text-white/75"><span>Today&apos;s booked sales</span><CircleDollarSign className="size-5 text-[#bce1cc]" strokeWidth={1.5} /></div>
+          <div className="mt-3 text-4xl font-semibold tracking-[-0.04em] tabular">{peso(todaySales)}</div>
+          <div className="mt-5 grid grid-cols-3 gap-3 border-t border-white/15 pt-4 text-sm">
             <div>
               <div className="text-xs text-white/60">Expected margin</div>
               <div className="font-semibold tabular">{pesoCompact(expectedMargin)}</div>
@@ -147,7 +150,7 @@ export function CommandCenter() {
             </div>
           </div>
         </Card>
-        <Card className="p-4">
+        <Card className="p-5">
           <div className="text-[13px] text-muted-foreground">Truck capacity used today</div>
           <div className="mt-2 grid gap-3">
             {todayTrips.map((t) => {
@@ -167,7 +170,7 @@ export function CommandCenter() {
             })}
           </div>
         </Card>
-        <Card className="p-4">
+        <Card className="p-5">
           <div className="text-[13px] text-muted-foreground">Outstanding collections</div>
           <div className="mt-1 text-2xl font-semibold tabular">{pesoCompact(sumBy(invoices, (i) => i.balance))}</div>
           <div className="text-sm font-medium text-danger">{peso(overdueTotal)} overdue</div>
@@ -181,33 +184,31 @@ export function CommandCenter() {
       </div>
 
       {/* Business flow */}
-      <Card className="mt-4">
+      <Card className="mt-6">
         <CardHeader>
           <div>
             <CardTitle>Today&apos;s business flow</CardTitle>
-            <CardDescription>From Messenger and phone orders to cash in the bank — click any step to drill down</CardDescription>
+            <CardDescription>Follow every stage from order to collection. Select a step to take action.</CardDescription>
           </div>
         </CardHeader>
         <CardContent>
-          <ol className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <ol className="grid grid-cols-2 gap-3 xl:grid-cols-5">
             {flow.map((s, i) => (
               <li key={s.label} className="relative">
                 <Link
                   href={s.href}
                   className={cn(
-                    "flex h-full flex-col gap-1 rounded-lg border p-3 transition-colors hover:bg-accent/40",
-                    s.state === "attention" && "border-[oklch(0.8_0.1_75)] bg-warning-soft/60",
-                    s.state === "active" && "border-primary/40 bg-accent/30",
+                    "flex h-full flex-col gap-2 rounded-xl border border-border/70 bg-muted/20 p-3.5 transition-colors hover:border-primary/40 hover:bg-accent/40",
+                    s.state === "attention" && "border-[#e9e5d8] bg-[#fbfaf6]",
+                    s.state === "active" && "border-primary/20 bg-accent/40",
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] tabular">{i + 1}</span>
-                      {s.label}
-                    </span>
+                    <span className="text-[10px] font-medium text-muted-foreground tabular">STEP {String(i + 1).padStart(2, "0")}</span>
                     <s.icon className={cn("size-4", s.state === "attention" ? "text-[oklch(0.55_0.13_65)]" : s.state === "done" ? "text-[oklch(0.5_0.13_150)]" : "text-primary")} />
                   </div>
-                  <div className="text-lg font-semibold tabular">{s.value}</div>
+                  <div className="text-xs font-medium text-muted-foreground">{s.label}</div>
+                  <div className="text-lg font-semibold tracking-tight tabular">{s.value}</div>
                   <div className="text-xs text-muted-foreground">{s.sub}</div>
                 </Link>
               </li>
@@ -238,7 +239,7 @@ export function CommandCenter() {
                         {o.id} · {orderSummary(o)}
                       </div>
                     </div>
-                    <span className="shrink-0 rounded-md bg-warning-soft px-2 py-0.5 text-right text-[11px] font-medium text-[oklch(0.45_0.11_65)]">{reason}</span>
+                    <span className="max-w-[46%] shrink-0 rounded-md bg-warning-soft px-2 py-1 text-right text-[11px] font-medium text-[oklch(0.45_0.11_65)]">{reason}</span>
                   </Link>
                 </li>
               ))}
@@ -256,23 +257,23 @@ export function CommandCenter() {
               <CardDescription>ETA beyond the customer&apos;s receiving window</CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="grid gap-3">
+          <CardContent className="grid grid-cols-1 gap-3">
             {late.length === 0 ? (
               <p className="text-sm text-muted-foreground">All drops are on schedule.</p>
             ) : (
               late.map(({ d, o, lateBy }) => (
                 <Link key={d.id} href={`/orders/${o.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-danger/20 bg-danger-soft/50 p-3 hover:bg-danger-soft">
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium">{customers.get(o.customerId)?.name}</div>
                     <div className="text-xs text-muted-foreground">
                       Receiving {o.deliveryWindow} · ETA {fmtTime(d.eta)}
                     </div>
                   </div>
-                  <span className="text-sm font-semibold text-danger tabular">+{lateBy}m</span>
+                  <span className="shrink-0 text-sm font-semibold text-danger tabular">+{lateBy}m</span>
                 </Link>
               ))
             )}
-            <div className="grid gap-2 border-t pt-3">
+            <div className="grid grid-cols-1 gap-2 border-t pt-3">
               {todayTrips.map((t) => {
                 const m = metrics.get(t.id)!;
                 const next = buildTripStops(t, m, customersList).find((s) => s.status === "current");
@@ -309,7 +310,7 @@ export function CommandCenter() {
               </Link>
             </Button>
           </CardHeader>
-          <CardContent className="grid gap-2">
+          <CardContent className="grid grid-cols-1 gap-2">
             {shortages.length === 0 ? (
               <p className="text-sm text-muted-foreground">No shortages — all confirmed orders are covered.</p>
             ) : (
@@ -348,12 +349,12 @@ export function CommandCenter() {
               </Link>
             </Button>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {todayTrips.map((t) => {
               const m = metrics.get(t.id)!;
               const unused = m.capacityKg - m.returnLoadKg;
               return (
-                <div key={t.id} className="grid gap-2 rounded-lg border p-3">
+                <div key={t.id} className="grid min-w-0 grid-cols-1 gap-2 rounded-lg border p-3">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">{truckById(t.truckId).code}</span>
                     <span className="text-xs text-muted-foreground">
