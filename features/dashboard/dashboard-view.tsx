@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Boxes, CircleDollarSign, Gauge, HandCoins, ShoppingCart } from "lucide-react";
 import { useAppStore } from "@/lib/store";
@@ -19,6 +20,7 @@ import { Columns, RankedBars, SERIES } from "@/components/charts/charts";
 
 /** Trading module (Phase 2 preview): product sales, stock value and sales receivables. */
 export function DashboardView() {
+  const [period, setPeriod] = useState<(typeof REVENUE_PERIODS)[number]>(30);
   const orders = useAppStore((s) => s.orders);
   const customers = useCustomerMap();
   const invoices = useSalesInvoices();
@@ -32,14 +34,35 @@ export function DashboardView() {
   const lastWeek = daily.find((d) => d.date === "2026-09-18");
   const ar = sumBy(invoices, (i) => i.balance);
   const overdue = sumBy(invoices.filter((i) => i.daysOverdue > 0), (i) => i.balance);
+  const overdueCustomers = [...stats.values()].filter((s) => s.overdue > 0).length;
+  const pendingOrders = orders.filter((o) => o.status === "Pending Confirmation").length;
+  const shortages = [...stock.values()].filter((s) => s.shortage > 0).length;
   const invValue = sumBy([...stock.values()], (s) => s.value);
   const last30 = daily.filter((d) => d.date < TODAY).slice(-26);
   const revenue30 = sumBy(last30, (d) => d.revenue);
   const cost30 = sumBy(last30, (d) => d.cost);
   const orders30 = sumBy(last30, (d) => d.orders);
 
+  // Use complete calendar days so the reporting period and exported totals agree.
+  const endDate = subDays(parseISO(TODAY), 1);
+  const startDate = subDays(parseISO(TODAY), period);
+  const start = format(startDate, "yyyy-MM-dd");
+  const dailyByDate = new Map(daily.map((day) => [day.date, day]));
+  const revenueRows = eachDayOfInterval({ start: startDate, end: endDate }).map((date) => {
+    const key = format(date, "yyyy-MM-dd");
+    return dailyByDate.get(key) ?? { date: key, revenue: 0, cost: 0, orders: 0 };
+  });
+  const periodOrders = orders.filter((o) => o.deliveryDate >= start && o.deliveryDate < TODAY && !o.notes?.startsWith("Opening balance"));
+  const revenue = sumBy(revenueRows, (d) => d.revenue);
+  const cost = sumBy(revenueRows, (d) => d.cost);
+  const deliveredCount = sumBy(revenueRows, (d) => d.orders);
+  const margin = revenue ? (revenue - cost) / revenue : 0;
+  const routes = getRoutePerformance(trips.filter((t) => t.date >= start && t.date < TODAY), tripMetrics);
   const families = new Map<string, number>();
-  for (const p of productSales) families.set(productFamily(p.productId), (families.get(productFamily(p.productId)) ?? 0) + p.revenue);
+  for (const product of getProductSales(periodOrders)) {
+    const family = productFamily(product.productId);
+    families.set(family, (families.get(family) ?? 0) + product.revenue);
+  }
   const familyRows = [...families.entries()].sort((a, b) => b[1] - a[1]);
   const topFamilies = familyRows.slice(0, 7).map(([label, value]) => ({ label, value }));
   const topOverdue = [...stats.entries()].filter(([, s]) => s.overdue > 0).sort((a, b) => b[1].overdue - a[1].overdue).slice(0, 6);

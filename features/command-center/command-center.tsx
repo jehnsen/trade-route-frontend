@@ -86,7 +86,7 @@ export function CommandCenter() {
   return (
     <>
       <PageHeader
-        title="Operations Command Center"
+        title="Command center"
         description={
           <>
             Friday, Sep 25 · live as of <b className="text-foreground">{fmtTime(NOW)}</b> — where the trucks are, what they carry, what&apos;s late, what&apos;s empty and who owes us.
