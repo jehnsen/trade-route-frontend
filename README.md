@@ -80,4 +80,27 @@ The board structures what already happens in the trucking GCs. It does not repla
 - `features/<module>/` — page-level views; `app/(internal)`, `app/(public)`, `app/driver`, `app/print` — thin route files
 - `scripts/` — `check-seed.ts`, `check-flows.ts`
 
-Contributor and AI-assistant conventions (domain rules, data consistency, UI patterns, definition of done) are in [CLAUDE.md](CLAUDE.md).
+
+
+## Latest Changes:
+What was added:
+
+Two tabs, Available Loads and Truck Capacity, with search and all the requested filters, plus five KPIs: Open Loads, Available Trucks, Available Internal Capacity, Potential Matches, Booked Today.
+Our own trucks' space is always calculated from the trip (truck payload minus cargo already on that leg), never typed in. So the board, Trips and Backhaul show the same numbers.
+Matching checks six simple rules: route, direction, free capacity, timing, truck type and cargo restrictions. Each match is labelled Strong Match, Possible Match or Poor Fit and shows the reason for each rule. It isn't labelled AI anywhere.
+Accepting a match:
+"Book on Truck 01" creates a Logistics Job and its cargo, adds them to the trip (stops and delivery included), and the truck's free space drops.
+Return-leg bookings appear on Backhaul, tagged "via Load Board".
+"Create logistics job without a trip" sends the job to Dispatch instead.
+Repeating a booking never creates a second job or cargo record.
+If the shipper isn't a customer yet, they're saved as a new COD customer.
+Partner trucks don't need to be in Fleet. There's a lightweight partner list; a load can be reserved on a partner's truck, and un-reserving gives the space back.
+Copy Share Message produces the LOAD AVAILABLE / AVAILABLE TRUCK CAPACITY text and confirms with a toast. When reposting our own or a customer's cargo, it puts our dispatcher's number in the message instead of the customer's, so customer contacts aren't handed to competitors in the GCs.
+Demo data: 5 fictional trucking partners, 14 loads and 10 capacity posts around Lucena, Metro Manila, Cavite, Laguna and Batangas. The two "Booked" examples are built from real jobs already in the demo data.
+Architecture changes: new types for the board, lib/load-board.ts for all the calculations, and three new store slices with their actions. JobSource gains "Load Board", but it's hidden from the manual job form.
+
+Things that differ from your brief:
+
+IDs: loads use FRT-YYMMDD-NNN, not LOAD-…, because LOAD-… is already the ID format for cargo records. Capacity posts use CAP-… as you suggested.
+Dates: the demo clock is fixed at Sep 25, 2026, so the seed data sits on Sep 25–26, not Sep 29.
+Your example numbers: Truck 01 has 4,400 kg of return space in the data, so booking the 2,000 kg onion load leaves 2,400 kg, not your 3,500 kg.
