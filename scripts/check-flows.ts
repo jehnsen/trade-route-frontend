@@ -3,6 +3,7 @@ import { useAppStore } from "../lib/store";
 import { LIFETIME_BASELINE } from "../data/finance";
 import { LUCENA_WAREHOUSE } from "../data/areas";
 import { getCustomerStats, getInvoices, getTripMetricsMap, invoiceIdForJob, tripWarnings, unassignedJobs } from "../lib/logistics";
+import { capacityShareMessage, getBoardMatches, getCapacityViews, loadShareMessage, loadStatus } from "../lib/load-board";
 
 const s = () => useAppStore.getState();
 const metrics = () => getTripMetricsMap(s().trips, s().jobs, s().loads, s().deliveries, s().expenses);
@@ -89,3 +90,65 @@ assert(!s().loads.some((l) => l.jobId === "JOB-260926-003" && l.tripId) && !s().
 const before10 = metrics().get("TRIP-260925-01")!.expenseTotal;
 s().addFuelLog({ truckId: "TRK-01", tripId: "TRIP-260925-01", driverId: "DRV-01", date: "2026-09-25T12:00", odometerKm: 284700, liters: 50, pricePerLiter: 63.2, station: "Shell — NLEX Valenzuela", areaId: "valenzuela", fullTank: false });
 assert(metrics().get("TRIP-260925-01")!.expenseTotal === before10 + 3160, "fuel top-up adds ₱3,160 diesel to the trip");
+
+// ─── Load Board ─────────────────────────────────────────────────────────────
+const views = () => getCapacityViews(s().boardCapacity, s().trips, metrics(), s().truckingPartners);
+const board = () => getBoardMatches(s().boardLoads, views(), s().jobs);
+const boardStatus = (id: string) => {
+  const l = s().boardLoads.find((x) => x.id === id)!;
+  return loadStatus(l, l.jobId ? s().jobs.find((j) => j.id === l.jobId) : undefined);
+};
+const consignee = { name: "Alvin Tolentino", phone: "0917 334 8821" };
+
+// 11. Our capacity on the board is derived from the trip (after step 5 added 1,200 kg)
+const cap1 = views().get("CAP-260924-001")!;
+assert(cap1.availableKg === cap1.totalKg - metrics().get("TRIP-260925-01")!.returnKg && cap1.availableKg === 3200, `Truck 01 return space = payload − return load (${cap1.availableKg} kg)`);
+
+// 12. Rule-based matching
+const m1 = board().byLoad.get("FRT-260925-001")!.find((m) => m.capacityId === "CAP-260924-001")!;
+assert(m1.label === "Strong Match" && m1.availableAfter === 1200, `FRT-260925-001 → Truck 01 is a ${m1.label}, 1,200 kg left after`);
+const frozen = board().byLoad.get("FRT-260925-004")!;
+assert(frozen.find((m) => m.capacityId === "CAP-260924-001")!.label === "Poor Fit" && frozen[0].capacityId === "CAP-260925-005" && frozen[0].label === "Strong Match", "reefer load only fits the partner reefer van");
+assert(!board().byLoad.has("FRT-260924-001") && boardStatus("FRT-260924-001") === "Expired", "past-pickup load is Expired and not matched");
+
+// 13. Accept match → Logistics Job + Load on the trip → return (backhaul) cargo
+const jobsBefore = s().jobs.length;
+const loadsBefore = s().loads.length;
+const r1 = s().bookBoardLoad({ loadId: "FRT-260925-001", capacityId: "CAP-260924-001", freightCharge: 9000, paymentTerms: "COD", consignee })!;
+const bj = s().jobs.find((j) => j.id === r1.jobId)!;
+assert(r1.created && bj.source === "Load Board" && bj.tripId === "TRIP-260925-01" && bj.leg === "return" && bj.status === "Assigned", `FRT-260925-001 became ${r1.jobId} on TRIP-260925-01`);
+const bl = s().loads.filter((l) => l.jobId === r1.jobId);
+assert(bl.length === 1 && bl[0].tripId === "TRIP-260925-01" && bl[0].type === "Third-Party" && bl[0].weightKg === 2000, "one 2,000 kg third-party load on the trip");
+assert(metrics().get("TRIP-260925-01")!.returnLoads.some((l) => l.jobId === r1.jobId) && metrics().get("TRIP-260925-01")!.returnKg === 7300, "load counted in the trip's return leg (Backhaul)");
+assert(s().trips.find((t) => t.id === "TRIP-260925-01")!.stops.some((st) => st.loaded.includes(bl[0].id)) && s().deliveries.some((d) => d.jobId === r1.jobId), "pickup stop and delivery added to the trip");
+assert(views().get("CAP-260924-001")!.availableKg === 1200 && boardStatus("FRT-260925-001") === "Booked", "board shows 1,200 kg left and the load as Booked");
+const shipper = s().customers.find((c) => c.id === bj.customerId)!;
+assert(shipper.status === "new" && shipper.contacts[0].name === "Alvin Tolentino", `shipper saved as new customer ${shipper.id}`);
+
+// 14. Repeating the action never duplicates
+const r2 = s().bookBoardLoad({ loadId: "FRT-260925-001", capacityId: "CAP-260924-001", freightCharge: 9000, paymentTerms: "COD", consignee })!;
+assert(!r2.created && r2.jobId === r1.jobId && s().jobs.length === jobsBefore + 1 && s().loads.length === loadsBefore + 1, "repeat booking creates no duplicate job or load");
+
+// 15. Create job without a trip, then add it to Truck 01 later
+const r3 = s().bookBoardLoad({ loadId: "FRT-260925-006", freightCharge: 6000, paymentTerms: "Credit 7 Days", consignee: { name: "Alfredo Maaño", phone: "0918 772 1043" } })!;
+const j3 = s().jobs.find((j) => j.id === r3.jobId)!;
+assert(j3.customerId === "CUS-035" && !j3.tripId && unassignedJobs(s().jobs).some((j) => j.id === j3.id) && boardStatus("FRT-260925-006") === "Reserved", `${j3.id} for Quezon Harvest Traders waits on dispatch; post is Reserved`);
+const r4 = s().bookBoardLoad({ loadId: "FRT-260925-006", capacityId: "CAP-260924-001", freightCharge: 6000, paymentTerms: "Credit 7 Days", consignee: { name: "Alfredo Maaño", phone: "0918 772 1043" } })!;
+assert(!r4.created && s().jobs.find((j) => j.id === r3.jobId)!.tripId === "TRIP-260925-01" && boardStatus("FRT-260925-006") === "Booked", "existing job moved onto the trip without a new job");
+assert(views().get("CAP-260924-001")!.availableKg === 0 && views().get("CAP-260924-001")!.status === "Full", "Truck 01 return leg now Full on the board");
+
+// 16. Partner truck reservation holds and releases space
+s().reserveOnPartnerTruck("FRT-260925-004", "CAP-260925-005");
+s().reserveOnPartnerTruck("FRT-260925-004", "CAP-260925-005");
+assert(views().get("CAP-260925-005")!.usedKg === 4700 && boardStatus("FRT-260925-004") === "Reserved", "reserving on the reefer uses 2,500 kg once");
+s().setBoardLoadStatus("FRT-260925-004", "Looking for Truck");
+assert(views().get("CAP-260925-005")!.usedKg === 2200 && !s().boardLoads.find((l) => l.id === "FRT-260925-004")!.capacityId, "releasing the reservation gives the space back");
+
+// 17. Posting and share messages
+const newCap = s().postCapacity({ fleet: "internal", tripId: "TRIP-260926-02", leg: "return", source: "Internal", contact: { name: "Noel Pascual", phone: "0919 338 5402" }, acceptedCargo: [] });
+const nv = views().get(newCap)!;
+assert(nv.availableKg === nv.totalKg - metrics().get("TRIP-260926-02")!.returnKg, `${newCap} reads Truck 02's return space from TRIP-260926-02 (${nv.availableKg} kg)`);
+const cmsg = capacityShareMessage(views().get("CAP-260925-004")!);
+assert(cmsg.startsWith("AVAILABLE TRUCK CAPACITY") && cmsg.includes("Available Capacity: 4,200 kg") && cmsg.includes("Departure: Tonight, 9:00 PM"), "capacity share message");
+const lmsg = loadShareMessage(s().boardLoads.find((l) => l.id === "FRT-260925-010")!);
+assert(lmsg.startsWith("LOAD AVAILABLE") && lmsg.includes("Weight: 2,000 kg") && lmsg.includes("Noel Pascual") && !lmsg.includes("Rolando"), "customer load reposted with our desk as contact");

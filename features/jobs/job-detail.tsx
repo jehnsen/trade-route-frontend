@@ -30,6 +30,7 @@ export function JobDetail({ id }: { id: string }) {
   const deliveries = useAppStore((s) => s.deliveries);
   const allPayments = useAppStore((s) => s.payments);
   const quotes = useAppStore((s) => s.quotes);
+  const boardPost = useAppStore((s) => s.boardLoads.find((l) => !!id && l.jobId === id));
   const customer = useAppStore((s) => s.customers.find((c) => c.id === job?.customerId));
   const setStatus = useAppStore((s) => s.setJobStatus);
   const invoice = useInvoiceMap().get(id);
@@ -131,6 +132,7 @@ export function JobDetail({ id }: { id: string }) {
             <Stat label="Booked" value={fmtDateTime(job.createdAt)} sub={job.history[0]?.by} />
             <Stat label="Sales rep" value={staffById(job.salespersonId)?.name ?? "—"} />
             <Stat label="Quote" value={quote ? <Link href={`/quotes?q=${quote.id}`} className="text-primary hover:underline">{quote.id}</Link> : "—"} sub={quote ? `${quote.status} · valid to ${fmtDay(quote.validUntil)}` : undefined} />
+            {boardPost && <Stat label="Load Board post" value={<Link href={`/load-board?q=${boardPost.id}`} className="text-primary hover:underline">{boardPost.id}</Link>} sub={`${boardPost.source}${boardPost.sourceReference ? ` · ${boardPost.sourceReference}` : ""}`} className="col-span-2" />}
             <Stat label="Truck requirement" value={job.truckRequirement} className="col-span-2" />
           </CardContent>
         </Card>

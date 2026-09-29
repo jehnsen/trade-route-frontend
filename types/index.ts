@@ -365,7 +365,7 @@ export type JobStatus =
   | "Completed"
   | "Cancelled";
 
-export type JobSource = "Phone" | "Messenger" | "Facebook" | "Sales Staff" | "Repeat Customer" | "Referral" | "Customer Portal";
+export type JobSource = "Phone" | "Messenger" | "Facebook" | "Sales Staff" | "Repeat Customer" | "Referral" | "Customer Portal" | "Load Board";
 
 /** Outbound = leaves Lucena; Return = hauled on a return (backhaul) leg toward Quezon. */
 export type Leg = "outbound" | "return";
@@ -534,6 +534,99 @@ export interface Delivery {
   issues: DeliveryIssue[];
   failureReason?: string;
 }
+
+// ─── Load board ─────────────────────────────────────────────────────────────
+// Freight and truck-space posts picked up from Messenger/Viber GCs, Facebook and direct
+// contacts. The board structures them and matches them against our trips; it does not
+// replace those channels. Booking a post onto our truck turns it into a Job + Load.
+
+export type LoadBoardSource = "Messenger GC" | "Viber GC" | "Facebook Group" | "Facebook Post" | "Direct Contact" | "Existing Customer" | "Internal";
+export type TruckType = "10-Wheeler Closed Van" | "10-Wheeler Wing Van" | "6-Wheeler Closed Van" | "6-Wheeler Reefer Van" | "4-Wheeler Closed Van";
+export type RequiredTruckType = TruckType | "Any Closed Van" | "Any Truck";
+
+export type AvailableLoadStatus = "Looking for Truck" | "Matching" | "Reserved" | "Booked" | "Expired" | "Cancelled";
+export type CapacityStatus = "Open" | "Partially Filled" | "Full" | "Departed" | "Expired" | "Cancelled";
+
+export interface BoardContact {
+  name: string;
+  phone: string;
+}
+
+/** Trucking business outside our fleet that posts loads or truck space in the GCs. */
+export interface TruckingPartner {
+  id: string;
+  name: string;
+  contact: BoardContact;
+  truckTypes: TruckType[];
+  channel: LoadBoardSource;
+  /** GC or group where they usually post, e.g. "Quezon–NCR Trucking GC". */
+  channelName?: string;
+  typicalRoutes: string[];
+  notes?: string;
+  since: ISODate;
+}
+
+interface BoardPostBase {
+  id: string;
+  source: LoadBoardSource;
+  /** GC / group name or post note, as the coordinator recorded it. */
+  sourceReference?: string;
+  contact: BoardContact;
+  partnerId?: string;
+  notes?: string;
+  createdAt: ISODateTime;
+  postedBy: string;
+  closedReason?: string;
+}
+
+/** Cargo that needs a truck. */
+export interface AvailableLoad extends BoardPostBase {
+  customerId?: string;
+  pickup: Place;
+  destination: Place;
+  cargoDescription: string;
+  cargoCategory: CargoCategory;
+  weightKg: number;
+  truckType: RequiredTruckType;
+  pickupAt: ISODateTime;
+  deliveryBy?: ISODateTime;
+  offeredFreight?: number;
+  specialHandling?: string;
+  /** Recorded status. Once a job exists, Reserved / Booked / Cancelled follow the job. */
+  status: AvailableLoadStatus;
+  jobId?: string;
+  capacityId?: string;
+  bookedAt?: ISODateTime;
+}
+
+interface CapacityBase extends BoardPostBase {
+  /** Empty = accepts any cargo category. */
+  acceptedCargo: CargoCategory[];
+  restrictions?: string;
+  /** Recorded status. Open / Partially Filled / Full / Departed are derived unless closed. */
+  status: CapacityStatus;
+}
+
+/** Space on one of our trips. Capacity figures always come from the trip's loads. */
+export interface InternalCapacity extends CapacityBase {
+  fleet: "internal";
+  tripId: string;
+  leg: Leg;
+}
+
+/** Space on a partner's truck, as they posted it. */
+export interface ExternalCapacity extends CapacityBase {
+  fleet: "external";
+  truckType: TruckType;
+  currentLocation: Place;
+  destination: Place;
+  plannedRoute: AreaId[];
+  totalCapacityKg: number;
+  usedCapacityKg: number;
+  departureAt: ISODateTime;
+}
+
+export type AvailableCapacity = InternalCapacity | ExternalCapacity;
 
 // ─── Finance (freight billing) ──────────────────────────────────────────────
 export type PaymentMethod = "Cash" | "Bank Transfer" | "GCash" | "Maya" | "Check" | "COD";

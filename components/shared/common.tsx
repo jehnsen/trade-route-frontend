@@ -4,11 +4,15 @@ import * as React from "react";
 import Link from "next/link";
 import {
   ArrowDownRight,
+  ArrowLeftRight,
   ArrowUpRight,
+  Building2,
   ChevronRight,
   Globe,
   MapPin,
   MessageCircle,
+  MessagesSquare,
+  Newspaper,
   Phone,
   Repeat,
   Search,
@@ -17,7 +21,7 @@ import {
   type LucideIcon,
   Inbox,
 } from "lucide-react";
-import type { Address, JobSource, OrderSource } from "@/types";
+import type { Address, JobSource, LoadBoardSource, OrderSource } from "@/types";
 import { cn } from "@/lib/utils";
 import { peso, pesoCompact, kg, pct } from "@/lib/format";
 import { Card } from "@/components/ui/primitives";
@@ -304,11 +308,34 @@ const JOB_SOURCE_META: Record<JobSource, { icon: LucideIcon; className: string }
   "Repeat Customer": { icon: Repeat, className: "bg-success-soft text-[oklch(0.42_0.12_150)]" },
   Referral: { icon: Users, className: "bg-accent text-accent-foreground" },
   "Customer Portal": { icon: Globe, className: "bg-accent text-accent-foreground" },
+  "Load Board": { icon: ArrowLeftRight, className: "bg-[oklch(0.95_0.04_300)] text-[oklch(0.45_0.14_300)]" },
 };
 export const JOB_SOURCES = Object.keys(JOB_SOURCE_META) as JobSource[];
 
 export function JobSourceBadge({ source }: { source: JobSource }) {
   const m = JOB_SOURCE_META[source];
+  const Icon = m.icon;
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap", m.className)}>
+      <Icon className="size-3" />
+      {source}
+    </span>
+  );
+}
+
+// ─── Load board source ──────────────────────────────────────────────────────
+const BOARD_SOURCE_META: Record<LoadBoardSource, { icon: LucideIcon; className: string }> = {
+  "Messenger GC": { icon: MessageCircle, className: "bg-[oklch(0.95_0.03_265)] text-[oklch(0.45_0.17_265)]" },
+  "Viber GC": { icon: MessagesSquare, className: "bg-[oklch(0.95_0.04_300)] text-[oklch(0.45_0.14_300)]" },
+  "Facebook Group": { icon: Users, className: "bg-[oklch(0.95_0.03_255)] text-[oklch(0.45_0.15_255)]" },
+  "Facebook Post": { icon: Newspaper, className: "bg-[oklch(0.95_0.03_255)] text-[oklch(0.45_0.15_255)]" },
+  "Direct Contact": { icon: Phone, className: "bg-muted text-foreground/80" },
+  "Existing Customer": { icon: Repeat, className: "bg-success-soft text-[oklch(0.42_0.12_150)]" },
+  Internal: { icon: Building2, className: "bg-accent text-accent-foreground" },
+};
+
+export function BoardSourceBadge({ source }: { source: LoadBoardSource }) {
+  const m = BOARD_SOURCE_META[source];
   const Icon = m.icon;
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap", m.className)}>

@@ -262,7 +262,7 @@ export function JobForm({ initialCustomerId }: { initialCustomerId?: string }) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {JOB_SOURCES.map((s) => (
+                        {JOB_SOURCES.filter((s) => s !== "Load Board").map((s) => (
                           <SelectItem key={s} value={s}>
                             {s}
                           </SelectItem>

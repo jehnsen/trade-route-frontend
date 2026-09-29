@@ -5,6 +5,10 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { addMinutes, format, parseISO } from "date-fns";
 import type {
   AppNotification,
+  AvailableCapacity,
+  AvailableLoad,
+  AvailableLoadStatus,
+  CapacityStatus,
   CargoCategory,
   CartLine,
   Charge,
@@ -47,6 +51,7 @@ import type {
   Trip,
   TripStatus,
   TruckRequirement,
+  TruckingPartner,
   VehicleDocument,
 } from "@/types";
 import { NOW, TODAY, staffById } from "@/data/company";
@@ -58,6 +63,8 @@ import { LEADS } from "@/data/leads";
 import { VEHICLE_DOCUMENTS, driverById, truckById } from "@/data/fleet";
 import { areaById, LUCENA_WAREHOUSE, routeById } from "@/data/areas";
 import { supplierById } from "@/data/suppliers";
+import { BOARD_CAPACITY, BOARD_LOADS, TRUCKING_PARTNERS } from "@/data/load-board";
+import { bookingLeg, customerTypeFor, leadSourceFor, requiredByFor, truckRequirementFor } from "@/lib/load-board";
 
 import {
   DELIVERY_DONE,
@@ -176,6 +183,25 @@ export interface NewFuelLogInput {
 
 export type PodInput = Omit<ProofOfDelivery, "signedAt" | "receiptNo"> & { receiptNo?: string };
 
+// Load board inputs
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+type BoardManaged = "id" | "createdAt" | "postedBy" | "status" | "closedReason";
+export type NewBoardLoadInput = Omit<AvailableLoad, BoardManaged | "jobId" | "capacityId" | "bookedAt">;
+export type NewCapacityInput = DistributiveOmit<AvailableCapacity, BoardManaged>;
+export type NewPartnerInput = Omit<TruckingPartner, "id" | "since">;
+
+export interface BookBoardLoadInput {
+  loadId: string;
+  /** Capacity post the load was matched with (our trip or a partner truck). */
+  capacityId?: string;
+  /** Bill-to customer; when empty a new customer is created from the poster. */
+  customerId?: string;
+  newCustomerName?: string;
+  freightCharge: number;
+  paymentTerms: PaymentTerms;
+  consignee: { name: string; phone: string };
+}
+
 // Trading inputs
 export interface NewOrderInput {
   customerId: string;
@@ -226,6 +252,10 @@ interface DataState {
   maintenance: MaintenanceRecord[];
   documents: VehicleDocument[];
   notifications: AppNotification[];
+  // Load board
+  truckingPartners: TruckingPartner[];
+  boardLoads: AvailableLoad[];
+  boardCapacity: AvailableCapacity[];
   // Trading (Phase 2 preview)
   orders: Order[];
   purchaseOrders: PurchaseOrder[];
@@ -273,6 +303,15 @@ interface Actions {
   addMaintenance: (m: Omit<MaintenanceRecord, "id">) => string;
   setMaintenanceStatus: (id: string, status: MaintenanceStatus, patch?: Partial<Pick<MaintenanceRecord, "cost" | "odometerKm" | "date" | "notes">>) => void;
   renewDocument: (id: string, patch: Pick<VehicleDocument, "reference" | "issueDate" | "expiryDate"> & { attachment?: string }) => void;
+  // Load board
+  postBoardLoad: (input: NewBoardLoadInput) => string;
+  postCapacity: (input: NewCapacityInput) => string;
+  addTruckingPartner: (input: NewPartnerInput) => string;
+  setBoardLoadStatus: (id: string, status: AvailableLoadStatus, reason?: string) => void;
+  setCapacityStatus: (id: string, status: CapacityStatus, reason?: string) => void;
+  updateCapacityUsed: (id: string, usedKg: number) => void;
+  reserveOnPartnerTruck: (loadId: string, capacityId: string) => void;
+  bookBoardLoad: (input: BookBoardLoadInput) => { jobId: string; created: boolean } | undefined;
   // Notifications
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
@@ -310,6 +349,9 @@ const initialData = (): DataState => ({
   maintenance: LOGISTICS_SEED.maintenance,
   documents: VEHICLE_DOCUMENTS,
   notifications: LOGISTICS_SEED.notifications,
+  truckingPartners: TRUCKING_PARTNERS,
+  boardLoads: BOARD_LOADS,
+  boardCapacity: BOARD_CAPACITY,
   orders: ORDERS,
   purchaseOrders: PURCHASE_ORDERS,
   salesPayments: SALES_PAYMENTS,
@@ -875,6 +917,152 @@ export const useAppStore = create<DataState & Actions>()(
           set((s) => ({ documents: s.documents.map((d) => (d.id === id ? { ...d, ...patch, notes: `Renewed ${TODAY}.` } : d)) }));
         },
 
+        // ─── Load board ───────────────────────────────────────────────────
+        postBoardLoad: (input) => {
+          const at = stamp();
+          const id = nextSeqId("FRT", yymmdd(at), get().boardLoads);
+          set((s) => ({ boardLoads: [{ ...input, id, status: "Looking for Truck", createdAt: at, postedBy: actor() }, ...s.boardLoads] }));
+          return id;
+        },
+
+        postCapacity: (input) => {
+          const at = stamp();
+          const id = nextSeqId("CAP", yymmdd(at), get().boardCapacity);
+          const post: AvailableCapacity = { ...input, id, status: "Open", createdAt: at, postedBy: actor() };
+          set((s) => ({ boardCapacity: [post, ...s.boardCapacity] }));
+          return id;
+        },
+
+        addTruckingPartner: (input) => {
+          const s = get();
+          const id = `TP-${String(maxNum(s.truckingPartners.map((p) => p.id), /TP-(\d+)/) + 1).padStart(3, "0")}`;
+          set({ truckingPartners: [...s.truckingPartners, { ...input, id, since: TODAY }] });
+          return id;
+        },
+
+        setBoardLoadStatus: (id, status, reason) => {
+          stamp();
+          const s = get();
+          const load = s.boardLoads.find((l) => l.id === id);
+          if (!load || load.jobId) return;
+          // Leaving a partner-truck reservation (other than confirming it) gives the space back.
+          const release = load.status === "Reserved" && load.capacityId && status !== "Booked" && status !== "Reserved" ? load.capacityId : undefined;
+          set({
+            boardLoads: s.boardLoads.map((l) =>
+              l.id === id ? { ...l, status, capacityId: release ? undefined : l.capacityId, bookedAt: release ? undefined : l.bookedAt, closedReason: status === "Looking for Truck" || status === "Matching" ? undefined : (reason ?? l.closedReason) } : l,
+            ),
+            boardCapacity: release ? s.boardCapacity.map((c) => (c.id === release && c.fleet === "external" ? { ...c, usedCapacityKg: Math.max(0, c.usedCapacityKg - load.weightKg) } : c)) : s.boardCapacity,
+          });
+        },
+
+        setCapacityStatus: (id, status, reason) => {
+          stamp();
+          set((s) => ({ boardCapacity: s.boardCapacity.map((c) => (c.id === id ? { ...c, status, closedReason: reason ?? c.closedReason } : c)) }));
+        },
+
+        updateCapacityUsed: (id, usedKg) => {
+          stamp();
+          set((s) => ({ boardCapacity: s.boardCapacity.map((c) => (c.id === id && c.fleet === "external" ? { ...c, usedCapacityKg: Math.min(c.totalCapacityKg, Math.max(0, usedKg)) } : c)) }));
+        },
+
+        reserveOnPartnerTruck: (loadId, capacityId) => {
+          const s = get();
+          const load = s.boardLoads.find((l) => l.id === loadId);
+          const cap = s.boardCapacity.find((c) => c.id === capacityId);
+          if (!load || !cap || cap.fleet !== "external" || load.jobId || load.capacityId === capacityId) return;
+          const at = stamp();
+          set({
+            boardLoads: s.boardLoads.map((l) => (l.id === loadId ? { ...l, status: "Reserved", capacityId, bookedAt: at } : l)),
+            boardCapacity: s.boardCapacity.map((c) => (c.id === capacityId && c.fleet === "external" ? { ...c, usedCapacityKg: Math.min(c.totalCapacityKg, c.usedCapacityKg + load.weightKg) } : c)),
+          });
+        },
+
+        bookBoardLoad: (input) => {
+          const s = get();
+          const load = s.boardLoads.find((l) => l.id === input.loadId);
+          if (!load) return undefined;
+          const cap = input.capacityId ? s.boardCapacity.find((c) => c.id === input.capacityId) : undefined;
+          const tripId = cap?.fleet === "internal" ? cap.tripId : undefined;
+
+          // Already booked: never create a second job or load — at most move it onto the trip.
+          const existing = load.jobId ? s.jobs.find((j) => j.id === load.jobId) : undefined;
+          if (existing && existing.status !== "Cancelled") {
+            if (tripId && existing.tripId !== tripId) get().assignJobToTrip(existing.id, tripId);
+            set((st) => ({ boardLoads: st.boardLoads.map((l) => (l.id === load.id ? { ...l, capacityId: cap?.id ?? l.capacityId } : l)) }));
+            return { jobId: existing.id, created: false };
+          }
+
+          let customerId = input.customerId || load.customerId;
+          if (!customerId) {
+            const cid = `CUS-${String(maxNum(s.customers.map((c) => c.id), /CUS-(\d+)/) + 1).padStart(3, "0")}`;
+            const area = areaById(load.pickup.areaId);
+            const partner = load.partnerId ? s.truckingPartners.find((p) => p.id === load.partnerId) : undefined;
+            const customer: Customer = {
+              id: cid,
+              name: input.newCustomerName?.trim() || partner?.name || load.contact.name,
+              type: customerTypeFor(load.cargoCategory),
+              areaId: area.id,
+              contacts: [{ name: load.contact.name, position: "Shipper", phone: load.contact.phone, primary: true }],
+              addresses: [{ id: `${cid}-A1`, label: "Pickup point", line1: load.pickup.address ?? load.pickup.name, barangay: "—", city: area.name, province: area.province, areaId: area.id, receivingHours: "To be confirmed", default: true }],
+              paymentTerms: input.paymentTerms,
+              creditLimit: 0,
+              salespersonId: "ST-02",
+              leadSource: leadSourceFor(load.source),
+              customerSince: TODAY,
+              preferredProductIds: [],
+              fulfillment: "truck",
+              status: "new",
+              notes: `First booked through Load Board ${load.id} (${load.source}${load.sourceReference ? ` · ${load.sourceReference}` : ""}).`,
+              deliveryFee: 0,
+              paymentBehavior: "average",
+              frequency: 2,
+            };
+            set({ customers: [...s.customers, customer] });
+            customerId = cid;
+          }
+
+          const at = stamp();
+          const { job, loads } = buildJob(
+            {
+              customerId,
+              source: "Load Board",
+              leg: bookingLeg(load, cap),
+              pickup: load.pickup,
+              dropoff: load.destination,
+              consignee: input.consignee,
+              cargo: [{ cargoDescription: load.cargoDescription, cargoCategory: load.cargoCategory, quantity: load.weightKg, unit: "kg", weightKg: load.weightKg, handlingNotes: load.specialHandling }],
+              truckRequirement: truckRequirementFor(load),
+              pickupAt: load.pickupAt,
+              requiredBy: requiredByFor(load),
+              freightCharge: input.freightCharge,
+              additionalCharges: [],
+              paymentTerms: input.paymentTerms,
+              instructions: load.specialHandling,
+              notes: load.notes,
+              status: "Awaiting Dispatch",
+              loadType: "Third-Party",
+            },
+            at,
+          );
+          job.history.push({ at, label: `Booked from Load Board ${load.id}`, by: actor(), note: `${load.source}${load.sourceReference ? ` · ${load.sourceReference}` : ""} · posted by ${load.contact.name}` });
+          set((st) => ({
+            jobs: [job, ...st.jobs],
+            loads: [...loads, ...st.loads],
+            boardLoads: st.boardLoads.map((l) => (l.id === load.id ? { ...l, customerId, jobId: job.id, capacityId: cap?.id, bookedAt: at } : l)),
+          }));
+          if (tripId) get().assignJobToTrip(job.id, tripId);
+          const trip = tripId ? get().trips.find((t) => t.id === tripId) : undefined;
+          notify({
+            kind: "job",
+            title: "Load Board booking",
+            body: `${load.id} → ${job.id}: ${load.cargoDescription}, ${load.weightKg.toLocaleString("en-PH")} kg${trip ? ` on ${truckById(trip.truckId).code} (${trip.id})` : " — awaiting dispatch"}.`,
+            href: `/jobs/${job.id}`,
+            severity: "info",
+            roles: ["owner", "dispatcher"],
+          });
+          return { jobId: job.id, created: true };
+        },
+
         markNotificationRead: (id) => set((s) => ({ notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
         markAllNotificationsRead: () => set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) })),
 
@@ -1014,6 +1202,9 @@ export const useAppStore = create<DataState & Actions>()(
         maintenance: s.maintenance,
         documents: s.documents,
         notifications: s.notifications,
+        truckingPartners: s.truckingPartners,
+        boardLoads: s.boardLoads,
+        boardCapacity: s.boardCapacity,
         orders: s.orders,
         purchaseOrders: s.purchaseOrders,
         salesPayments: s.salesPayments,

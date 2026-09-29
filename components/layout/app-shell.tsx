@@ -32,6 +32,7 @@ import { useAppStore, actorFor } from "@/lib/store";
 import { useInvoices } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
 import { documentStatus, unassignedJobs } from "@/lib/logistics";
+import { loadStatus, needsTruck } from "@/lib/load-board";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/primitives";
@@ -60,6 +61,7 @@ function useNavBadges(): Record<NavBadgeKey, number> {
   const maintenance = useAppStore((s) => s.maintenance);
   const documents = useAppStore((s) => s.documents);
   const deliveries = useAppStore((s) => s.deliveries);
+  const boardLoads = useAppStore((s) => s.boardLoads);
   const invoices = useInvoices();
   return React.useMemo(() => {
     const overdueCustomers = new Set(
@@ -89,8 +91,9 @@ function useNavBadges(): Record<NavBadgeKey, number> {
             d.status !== "Delivered" &&
             d.status !== "Returned"),
       ).length,
+      openBoardLoads: boardLoads.filter((l) => !l.jobId && needsTruck(l, loadStatus(l, undefined))).length,
     };
-  }, [jobs, leads, quotes, maintenance, documents, deliveries, invoices]);
+  }, [jobs, leads, quotes, maintenance, documents, deliveries, boardLoads, invoices]);
 }
 
 function SidebarLink({

@@ -4,6 +4,7 @@ import type { Customer } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { LIFETIME_BASELINE } from "@/data/finance";
 import { getCustomerStats, getInvoiceMap, getInvoices, getTripMetricsMap } from "@/lib/logistics";
+import { getBoardMatches, getCapacityViews } from "@/lib/load-board";
 import { getDailyRevenue, getProductSales, getSalesCustomerStats, getSalesInvoiceMap, getSalesInvoices, getStockMap } from "@/lib/selectors";
 import { memoizeLast } from "@/lib/utils";
 
@@ -34,6 +35,20 @@ export function useTripMetrics() {
   const deliveries = useAppStore((s) => s.deliveries);
   const expenses = useAppStore((s) => s.expenses);
   return getTripMetricsMap(trips, jobs, loads, deliveries, expenses);
+}
+
+/** Load-board capacity posts resolved against trips (our trucks) or the partner's posted figures. */
+export function useCapacityViews() {
+  const posts = useAppStore((s) => s.boardCapacity);
+  const trips = useAppStore((s) => s.trips);
+  const partners = useAppStore((s) => s.truckingPartners);
+  return getCapacityViews(posts, trips, useTripMetrics(), partners);
+}
+
+export function useBoardMatches() {
+  const loads = useAppStore((s) => s.boardLoads);
+  const jobs = useAppStore((s) => s.jobs);
+  return getBoardMatches(loads, useCapacityViews(), jobs);
 }
 
 const toMap = <T extends { id: string }>() => memoizeLast((rows: T[]) => new Map(rows.map((r) => [r.id, r])));

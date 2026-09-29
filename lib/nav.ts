@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   BarChart3,
   Boxes,
   ClipboardList,
@@ -40,7 +41,7 @@ import {
 } from "lucide-react";
 import type { Role } from "@/types";
 
-export type NavBadgeKey = "awaitingDispatch" | "overdue" | "newLeads" | "openQuotes" | "maintenanceDue" | "docsExpiring" | "deliveryIssues";
+export type NavBadgeKey = "awaitingDispatch" | "overdue" | "newLeads" | "openQuotes" | "maintenanceDue" | "docsExpiring" | "deliveryIssues" | "openBoardLoads";
 
 export interface NavItem {
   href: string;
@@ -82,6 +83,7 @@ export const NAV: NavSection[] = [
       { href: "/deliveries", label: "Deliveries", icon: PackageCheck, roles: ["owner", "dispatcher", "sales", "warehouse"], badgeKey: "deliveryIssues" },
       { href: "/loads", label: "Loads / Cargo", icon: Boxes, roles: ["owner", "dispatcher", "warehouse", "procurement"] },
       { href: "/backhaul", label: "Backhaul", icon: Undo2, roles: ["owner", "dispatcher", "procurement"] },
+      { href: "/load-board", label: "Load Board", icon: ArrowLeftRight, roles: ["owner", "dispatcher", "sales", "procurement"], badgeKey: "openBoardLoads" },
     ],
   },
   {

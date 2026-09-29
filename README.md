@@ -9,6 +9,8 @@ Lead → Quote → Logistics Job → Loads → Dispatch → Trip (stops) → Del
      → Backhaul → Trip expenses & fuel → Invoice → Payment → Trip profitability
 ```
 
+The **Load Board** feeds the loop from the side: loads and truck space posted in Messenger / Viber GCs, Facebook groups and direct calls are logged in one place, matched against our trips with explainable rules, and booked as Logistics Jobs.
+
 No backend. All data is fictional, generated deterministically, and stored client-side (Zustand, persisted to `localStorage`). The demo clock is fixed at **Fri, Sep 25, 2026 · 7:48 AM**.
 
 ## Run
@@ -19,7 +21,7 @@ npm run dev          # http://localhost:3000
 npm run build        # production build (type-checks)
 npm run typecheck
 npm run check:seed   # data volume, utilization, AR aging + relationship checks on the logistics seed
-npm run check:flows  # exercises store actions (assign, POD, payments, quotes, trips) and checks consistency
+npm run check:flows  # exercises store actions (assign, POD, payments, quotes, trips, load board) and checks consistency
 ```
 
 ## Where to look
@@ -28,7 +30,7 @@ npm run check:flows  # exercises store actions (assign, POD, payments, quotes, t
 | --- | --- |
 | Owner | `/command-center`, `/reports`, `/workflow` (interactive walkthrough of the loop; deep-link with `?job=…&step=…`) |
 | Sales & CRM | `/leads`, `/customers`, `/customers/[id]`, `/quotes`, `/jobs`, `/jobs/new`, `/jobs/[id]` |
-| Logistics | `/dispatch`, `/trips`, `/trips/[id]`, `/deliveries`, `/deliveries/[id]`, `/loads`, `/backhaul` |
+| Logistics | `/dispatch`, `/trips`, `/trips/[id]`, `/deliveries`, `/deliveries/[id]`, `/loads`, `/backhaul`, `/load-board` (`?tab=capacity`, `?q=FRT-…`) |
 | Fleet | `/trucks`, `/trucks/[id]`, `/drivers`, `/drivers/[id]`, `/maintenance`, `/fuel-logs`, `/documents` |
 | Finance & Costs | `/accounts-receivable`, `/accounts-receivable/[invoiceId]`, `/payments`, `/expenses` (trip expenses) |
 | Driver (mobile) | `/driver` |
@@ -53,10 +55,29 @@ Business case for owners and stakeholders: [docs/logistics-platform-benefits.md]
 
 Trip contribution = freight revenue + additional charges − trip expenses (diesel is estimated until the fill-up is logged).
 
+## Load Board
+
+The board structures what already happens in the trucking GCs. It does not replace them, and it is not a public marketplace.
+
+- **AvailableLoad** (`FRT-yymmdd-nnn`): cargo that needs a truck, with pickup, destination, weight, required truck type, pickup / deliver-by times and offered freight. Statuses: Looking for Truck, Matching, Reserved, Booked, Expired, Cancelled. Once a job exists, the status follows the job. An unbooked load expires 2 hours past pickup.
+- **AvailableCapacity** (`CAP-yymmdd-nnn`) comes in two kinds:
+  - **Internal:** a leg of one of our trips. Its free kg is always read from the trip's loads, so the board, the trip and Backhaul agree.
+  - **External:** a partner truck's posted space.
+- **TruckingPartner** (`TP-nnn`): outside haulers who post in the GCs.
+- **Matching** is rule-based and explained per check: pickup on route, direction, capacity, timing, truck type and cargo restrictions. Each pair is labeled Strong Match, Possible Match or Poor Fit. It is not route optimization or ML.
+- **Booking** a load creates a **Logistics Job + Third-Party Load** (source *Load Board*). When matched to our trip, it is assigned straight onto that trip, and return-leg cargo shows on Backhaul. An unknown shipper becomes a new customer. Re-booking never duplicates the job or load.
+- Loads can instead be **reserved on a partner truck**, which holds that truck's space until the reservation is released.
+- **Share messages** ("LOAD AVAILABLE" / "AVAILABLE TRUCK CAPACITY") copy to the clipboard for reposting in the GCs.
+- Backhaul links to the board when posted return legs have fitting loads. The board prompts to post trips with ≥ 1,000 kg of unposted return space. The sidebar badge counts loads still needing a truck.
+
 ## Structure
 
 - `types/` — domain types (logistics first, trading types below)
-- `data/` — reference data (customers, fleet & documents, areas/places/routes, cargo types & demo rate card, leads), `logistics-seed.ts` (logistics generator), `seed.ts` (trading generator)
-- `lib/` — `logistics.ts` (stop planning, trip metrics, billing, fleet status), `store.ts` (Zustand actions), `calc.ts` / `selectors.ts` (trading math), `format.ts`, `nav.ts`, `domain.ts`
-- `components/ui` — shadcn-style primitives; `components/shared` — PageHeader, KPICard, StatusBadge, LoadTypeBadge, Timeline, CapacityBar, TripCard, TruckStatusCard, PodCard…; `components/data-table`, `components/charts`
+- `data/` — reference data (customers, fleet & documents, areas/places/routes, cargo types & demo rate card, leads), `load-board.ts` (trucking partners, board posts), `logistics-seed.ts` (logistics generator), `seed.ts` (trading generator)
+- `lib/` — `logistics.ts` (stop planning, trip metrics, billing, fleet status), `load-board.ts` (board statuses, capacity views, matching, share messages), `store.ts` (Zustand actions), `calc.ts` / `selectors.ts` (trading math), `format.ts`, `nav.ts`, `domain.ts`
+- `hooks/use-data.ts` — memoized derived data (invoices, trip metrics, customer stats, board capacity views and matches)
+- `components/ui` — shadcn-style primitives; `components/shared` — PageHeader, KPICard, StatusBadge, LoadTypeBadge, JobSourceBadge, BoardSourceBadge, Timeline, CapacityBar, TripCard, TruckStatusCard, PodCard…; `components/data-table`, `components/charts`
 - `features/<module>/` — page-level views; `app/(internal)`, `app/(public)`, `app/driver`, `app/print` — thin route files
+- `scripts/` — `check-seed.ts`, `check-flows.ts`
+
+Contributor and AI-assistant conventions (domain rules, data consistency, UI patterns, definition of done) are in [CLAUDE.md](CLAUDE.md).

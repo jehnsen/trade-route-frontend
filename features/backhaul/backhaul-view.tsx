@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowRight, Building2, CheckCircle2, Handshake, Lightbulb, MapPin, Plus, Route as RouteIcon, Undo2 } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, Building2, CheckCircle2, Handshake, Lightbulb, MapPin, Plus, Route as RouteIcon, Undo2 } from "lucide-react";
 import type { LogisticsJob, Trip } from "@/types";
 import { useAppStore } from "@/lib/store";
-import { useCustomerMap, useTripMetrics } from "@/hooks/use-data";
+import { useBoardMatches, useCapacityViews, useCustomerMap, useTripMetrics } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
 import { areaName, returnLegName, routeById } from "@/data/areas";
 import { truckById, driverById } from "@/data/fleet";
 import { canAddReturnCargo, jobTotal, truckLocation, type TripMetrics } from "@/lib/logistics";
+import { isGoodMatch } from "@/lib/load-board";
 import { fmtDateShort, fmtDay, fmtTime, kg, num, peso, pct, pesoCompact } from "@/lib/format";
 import { sumBy } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,17 @@ export function BackhaulView() {
   const today = current.filter((t) => t.date === TODAY);
   const done = trips.filter((t) => t.status === "Completed");
   const opportunities = findOpportunities(jobs, trips, metrics);
+  const boardViews = useCapacityViews();
+  const { byCapacity } = useBoardMatches();
+  // Load Board offers that fit one of our posted return legs.
+  const boardFits = new Set(
+    [...byCapacity.entries()]
+      .filter(([capId]) => {
+        const v = boardViews.get(capId);
+        return v?.post.fleet === "internal" && v.post.leg === "return";
+      })
+      .flatMap(([, ms]) => ms.filter(isGoodMatch).map((m) => m.loadId)),
+  );
   const todayM = today.map((t) => metrics.get(t.id)!);
   const unusedToday = sumBy(todayM, (m) => Math.max(0, m.capacityKg - m.returnKg));
   const avgRet = done.length ? sumBy(done, (t) => metrics.get(t.id)!.retUtil) / done.length : 0;
@@ -90,11 +102,18 @@ export function BackhaulView() {
         title="Backhaul"
         description="Every truck comes home to Lucena. Fill the return leg with paid third-party cargo, customer pickups or company-owned produce — no purchase order required."
         actions={
-          <Button variant="outline" asChild>
-            <Link href="/loads">
-              <Plus /> Add company cargo
-            </Link>
-          </Button>
+          <>
+            <Button variant="outline" asChild>
+              <Link href="/loads">
+                <Plus /> Add company cargo
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/load-board?tab=capacity">
+                <ArrowLeftRight /> Load Board
+              </Link>
+            </Button>
+          </>
         }
       />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -148,6 +167,22 @@ export function BackhaulView() {
             })}
           </CardContent>
         </Card>
+      )}
+
+      {boardFits.size > 0 && (
+        <div className="mb-4 flex flex-col gap-2 rounded-lg border bg-card px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex items-start gap-2">
+            <ArrowLeftRight className="mt-0.5 size-4 shrink-0 text-primary" />
+            <span>
+              <b>{boardFits.size}</b> open load{boardFits.size === 1 ? "" : "s"} from the GCs on the Load Board fit our posted return legs. Once booked they appear below as paid return cargo.
+            </span>
+          </span>
+          <Button size="sm" variant="outline" asChild>
+            <Link href="/load-board">
+              Review on Load Board <ArrowRight />
+            </Link>
+          </Button>
+        </div>
       )}
 
       <SectionTitle>Return legs — today & tomorrow</SectionTitle>
@@ -229,6 +264,7 @@ export function BackhaulView() {
 
 function ReturnLegCard({ trip, m }: { trip: Trip; m: TripMetrics }) {
   const customers = useCustomerMap();
+  const boardLoads = useAppStore((s) => s.boardLoads);
   const truck = truckById(trip.truckId);
   const route = routeById(trip.routeId);
   const loc = truckLocation(trip);
@@ -281,6 +317,7 @@ function ReturnLegCard({ trip, m }: { trip: Trip; m: TripMetrics }) {
             <li key={l.id} className="flex items-center justify-between gap-2 text-sm">
               <span className="min-w-0 truncate">
                 {l.cargoDescription.split(/[,(]/)[0]} — <span className="text-muted-foreground">{l.jobId ? customers.get(l.customerId ?? "")?.name : `from ${l.pickup.name}`}</span>
+                {l.jobId && boardLoads.some((b) => b.jobId === l.jobId) && <span className="ml-1 text-[11px] text-[oklch(0.45_0.14_300)]">· via Load Board</span>}
               </span>
               <span className="flex shrink-0 items-center gap-2">
                 <LoadTypeBadge type={l.type} />
@@ -301,7 +338,10 @@ function ReturnLegCard({ trip, m }: { trip: Trip; m: TripMetrics }) {
           <div className="flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-[oklch(0.42_0.1_65)]">
             <Lightbulb className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              {truck.code} has <b>{kg(free)}</b> unused return capacity. Offer it to Quezon traders or add company produce from {route.returnAreas.map(areaName).join(" / ")}.
+              {truck.code} has <b>{kg(free)}</b> unused return capacity. Offer it to Quezon traders or add company produce from {route.returnAreas.map(areaName).join(" / ")}.{" "}
+              <Link href="/load-board?tab=capacity" className="font-medium underline">
+                Match it on the Load Board
+              </Link>
             </span>
           </div>
         )}
