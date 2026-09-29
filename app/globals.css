@@ -101,7 +101,9 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
 }
 
 @layer base {
@@ -129,34 +131,35 @@
   scrollbar-width: thin;
 }
 
-/* Admin workspace: quiet surfaces, harbor green accents, and readable data. */
+/* Logistics workspace: ink navy, warm paper, and a high-visibility lime accent. */
 .admin-shell {
-  --background: #f5f7f8;
-  --foreground: #20312e;
-  --card-foreground: #20312e;
-  --primary: #216c58;
+  --background: #f5f6f8;
+  --foreground: #1c283a;
+  --card-foreground: #1c283a;
+  --primary: #263e36;
   --primary-foreground: #ffffff;
-  --muted: #f0f3f3;
-  --muted-foreground: #6e7c79;
-  --accent: #edf5f0;
-  --accent-foreground: #216c58;
-  --border: #e3e9e7;
-  --input: #d9e2df;
-  --ring: #408b74;
-  --sidebar: #152e2b;
-  --sidebar-foreground: #c7d5d0;
-  --sidebar-muted: #8fa8a0;
-  --sidebar-accent: #203d37;
-  --sidebar-active: #2a5346;
-  --sidebar-border: #2c443d;
-  --chart-grid: #e9eeeb;
-  --chart-axis: #7b8983;
+  --muted: #f0f2f5;
+  --muted-foreground: #6a7585;
+  --accent: #eef4e9;
+  --accent-foreground: #304a27;
+  --border: #e5e8ed;
+  --input: #d9dfe5;
+  --ring: #65824e;
+  --sidebar: #151f30;
+  --sidebar-foreground: #bbc4d2;
+  --sidebar-muted: #8b9ab0;
+  --sidebar-accent: #233047;
+  --sidebar-active: #c9ecaa;
+  --sidebar-border: #2d3748;
+  --chart-grid: #edf0f3;
+  --chart-axis: #758091;
+  font-family: var(--font-sans);
 }
 
 .admin-shell [data-slot="card"] {
   min-width: 0;
-  border-radius: 14px;
-  box-shadow: 0 2px 4px -2px rgb(25 48 40 / 4%);
+  border-radius: 16px;
+  box-shadow: 0 3px 8px -5px rgb(25 38 56 / 7%);
 }
 
 .admin-shell .page-header {
@@ -175,11 +178,84 @@
 }
 
 .admin-shell aside nav {
-  scrollbar-color: #3d5c50 transparent;
+  scrollbar-color: #394459 transparent;
+}
+
+.admin-shell .sidebar-link[aria-current="page"],
+.admin-shell .sidebar-link[aria-current="page"] svg {
+  color: #1c3024;
+}
+
+.admin-shell .sidebar-link[aria-current="page"] {
+  box-shadow: 0 3px 12px #00000010;
+}
+
+.admin-shell [data-slot="button"] {
+  border-radius: 8px;
+}
+
+.ops-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.ops-metric {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: #fff;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.ops-metric:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px #17283a0b;
+}
+
+.route-board {
+  background-color: #f5f7f2;
+  background-image: radial-gradient(#bdc9b955 0.8px, transparent 0.8px);
+  background-size: 18px 18px;
+}
+
+.ops-table th {
+  padding-block: 12px;
+  background: #f8f9fb;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.ops-table td {
+  padding-block: 16px;
+}
+
+.ops-enter {
+  animation: ops-enter 400ms ease both;
+}
+
+@keyframes ops-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .dashboard-metric {
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .dashboard-metric:hover {

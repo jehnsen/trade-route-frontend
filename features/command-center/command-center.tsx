@@ -1,20 +1,63 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CircleDollarSign, ClipboardList, Clock, FileWarning, Gauge, HandCoins, PackageCheck, Plus, Receipt, Route as RouteIcon, Timer, Truck, Undo2, Wallet, Wrench, type LucideIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  ArrowUpRight,
+  CalendarDays,
+  CheckCheck,
+  ChevronDown,
+  CircleDollarSign,
+  Clock,
+  Download,
+  FileWarning,
+  Gauge,
+  HandCoins,
+  PackageCheck,
+  Plus,
+  Timer,
+  Truck,
+  Wallet,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { useCustomerMap, useCustomerStats, useInvoices, useTripMetrics } from "@/hooks/use-data";
+import {
+  useCustomerMap,
+  useCustomerStats,
+  useInvoices,
+  useTripMetrics,
+} from "@/hooks/use-data";
 import { NOW, TODAY, TOMORROW } from "@/data/company";
 import { TRUCKS, truckById } from "@/data/fleet";
-import { ACTIVE_TRIP_STATUSES, DELIVERY_DONE, currentOdometer, documentStatus, maintenanceOutlook, tripProgress, tripWarnings, truckStatus, unassignedJobs } from "@/lib/logistics";
-import { tripRouteLine } from "@/lib/domain";
+import {
+  DELIVERY_DONE,
+  currentOdometer,
+  documentStatus,
+  maintenanceOutlook,
+  tripWarnings,
+  truckStatus,
+  unassignedJobs,
+} from "@/lib/logistics";
 import { fmtDay, fmtTime, kg, num, peso, pesoCompact, pct } from "@/lib/format";
-import { cn, sumBy } from "@/lib/utils";
+import { cn, downloadCsv, sumBy } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/primitives";
-import { CapacityBar, KPICard, MoneyDisplay, PageHeader } from "@/components/shared/common";
-import { ReceivableBadge, StatusBadge } from "@/components/shared/status-badge";
-import { TruckStatusCard } from "@/components/shared/trip-card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/primitives";
+import { MoneyDisplay } from "@/components/shared/common";
+import { ReceivableBadge } from "@/components/shared/status-badge";
+import {
+  FleetRoutes,
+  FreightDeliveries,
+  FreightPerformance,
+} from "./operations-panels";
 
 interface Alert {
   icon: LucideIcon;
@@ -25,6 +68,7 @@ interface Alert {
 }
 
 export function CommandCenter() {
+  const [allAlerts, setAllAlerts] = useState(false);
   const trips = useAppStore((s) => s.trips);
   const jobs = useAppStore((s) => s.jobs);
   const deliveries = useAppStore((s) => s.deliveries);
@@ -38,293 +82,502 @@ export function CommandCenter() {
   const invoices = useInvoices();
   const stats = useCustomerStats();
 
-  const truckStates = TRUCKS.map((t) => ({ truck: t, status: truckStatus(t, trips, maintenance) }));
-  const activeTrucks = truckStates.filter((s) => s.status === "On Trip" || s.status === "Loading").length;
-  const availableTrucks = truckStates.filter((s) => s.status === "Available" || s.status === "Assigned").length;
-  const activeTrips = trips.filter((t) => ACTIVE_TRIP_STATUSES.includes(t.status));
-  const todayTrips = trips.filter((t) => t.date === TODAY && t.status !== "Cancelled");
+  const truckStates = TRUCKS.map((t) => ({
+    truck: t,
+    status: truckStatus(t, trips, maintenance),
+  }));
+  const activeTrucks = truckStates.filter(
+    (s) => s.status === "On Trip" || s.status === "Loading",
+  ).length;
+  const availableTrucks = truckStates.filter(
+    (s) => s.status === "Available" || s.status === "Assigned",
+  ).length;
+  const todayTrips = trips.filter(
+    (t) => t.date === TODAY && t.status !== "Cancelled",
+  );
   const todayM = todayTrips.map((t) => metrics.get(t.id)!);
-  const todayDeliveries = deliveries.filter((d) => todayTrips.some((t) => t.id === d.tripId)).sort((a, b) => a.eta.localeCompare(b.eta));
+  const todayDeliveries = deliveries
+    .filter((d) => todayTrips.some((t) => t.id === d.tripId))
+    .sort((a, b) => a.eta.localeCompare(b.eta));
   const delivered = todayDeliveries.filter((d) => d.status === "Delivered");
-  const awaiting = unassignedJobs(jobs).filter((j) => j.pickupAt.slice(0, 10) <= TOMORROW);
-  const outUtil = sumBy(todayM, (m) => m.outboundKg) / Math.max(1, sumBy(todayM, (m) => m.capacityKg));
-  const retUtil = sumBy(todayM, (m) => m.returnKg) / Math.max(1, sumBy(todayM, (m) => m.capacityKg));
+  const awaiting = unassignedJobs(jobs).filter(
+    (j) => j.pickupAt.slice(0, 10) <= TOMORROW,
+  );
   const todayRevenue = sumBy(todayM, (m) => m.revenue);
-  const todayExpenses = sumBy(expenses.filter((e) => e.date === TODAY), (e) => e.amount);
+  const todayExpenses = sumBy(
+    expenses.filter((e) => e.date === TODAY),
+    (e) => e.amount,
+  );
   const outstanding = sumBy(invoices, (i) => i.balance);
-  const overdue = sumBy(invoices.filter((i) => i.daysOverdue > 0), (i) => i.balance);
-  const collectedToday = sumBy(payments.filter((p) => p.date.startsWith(TODAY)), (p) => p.amount);
+  const overdue = sumBy(
+    invoices.filter((i) => i.daysOverdue > 0),
+    (i) => i.balance,
+  );
+  const collectedToday = sumBy(
+    payments.filter((p) => p.date.startsWith(TODAY)),
+    (p) => p.amount,
+  );
 
   const jobMap = new Map(jobs.map((j) => [j.id, j]));
   const delayed = todayDeliveries
     .filter((d) => !DELIVERY_DONE.includes(d.status))
     .map((d) => ({ d, job: jobMap.get(d.jobId)! }))
     .filter(({ d, job }) => job && d.eta > job.requiredBy)
-    .map(({ d, job }) => ({ d, job, lateBy: Math.round((Date.parse(d.eta) - Date.parse(job.requiredBy)) / 60000) }));
+    .map(({ d, job }) => ({
+      d,
+      job,
+      lateBy: Math.round(
+        (Date.parse(d.eta) - Date.parse(job.requiredBy)) / 60000,
+      ),
+    }));
 
   const alerts: Alert[] = [];
-  for (const t of trips.filter((x) => (x.date === TODAY || x.date === TOMORROW) && x.status !== "Cancelled" && x.status !== "Completed")) {
-    for (const w of tripWarnings(t, metrics.get(t.id), trips, maintenance, documents)) alerts.push({ icon: w.kind === "capacity" ? Gauge : w.kind === "document" ? FileWarning : w.kind === "maintenance" ? Wrench : AlertTriangle, tone: w.kind === "capacity" || w.kind === "document" ? "danger" : "warning", title: `${truckById(t.truckId).code} · ${t.id}`, detail: w.message, href: `/trips/${t.id}` });
+  for (const t of trips.filter(
+    (x) =>
+      (x.date === TODAY || x.date === TOMORROW) &&
+      x.status !== "Cancelled" &&
+      x.status !== "Completed",
+  )) {
+    for (const w of tripWarnings(
+      t,
+      metrics.get(t.id),
+      trips,
+      maintenance,
+      documents,
+    ))
+      alerts.push({
+        icon:
+          w.kind === "capacity"
+            ? Gauge
+            : w.kind === "document"
+              ? FileWarning
+              : w.kind === "maintenance"
+                ? Wrench
+                : AlertTriangle,
+        tone:
+          w.kind === "capacity" || w.kind === "document" ? "danger" : "warning",
+        title: `${truckById(t.truckId).code} · ${t.id}`,
+        detail: w.message,
+        href: `/trips/${t.id}`,
+      });
   }
-  for (const { d, job, lateBy } of delayed) alerts.push({ icon: Clock, tone: "danger", title: `Late delivery risk — ${customers.get(job.customerId)?.name}`, detail: `ETA ${fmtTime(d.eta)} is ${lateBy} min after the ${fmtTime(job.requiredBy)} receiving cut-off`, href: `/deliveries/${d.id}` });
+  for (const { d, job, lateBy } of delayed)
+    alerts.push({
+      icon: Clock,
+      tone: "danger",
+      title: `Late delivery risk — ${customers.get(job.customerId)?.name}`,
+      detail: `ETA ${fmtTime(d.eta)} is ${lateBy} min after the ${fmtTime(job.requiredBy)} receiving cut-off`,
+      href: `/deliveries/${d.id}`,
+    });
   for (const t of todayTrips.filter((x) => x.status !== "Completed")) {
     const m = metrics.get(t.id)!;
-    if (m.outUtil < 0.6 && ["Planned", "Loading", "Ready"].includes(t.status)) alerts.push({ icon: Truck, tone: "warning", title: `${truckById(t.truckId).code} underutilized`, detail: `Outbound only ${pct(m.outUtil)} of payload — ${kg(m.capacityKg - m.outboundKg)} still free before ${fmtTime(t.departure)} departure`, href: "/dispatch" });
+    if (m.outUtil < 0.6 && ["Planned", "Loading", "Ready"].includes(t.status))
+      alerts.push({
+        icon: Truck,
+        tone: "warning",
+        title: `${truckById(t.truckId).code} underutilized`,
+        detail: `Outbound only ${pct(m.outUtil)} of payload — ${kg(m.capacityKg - m.outboundKg)} still free before ${fmtTime(t.departure)} departure`,
+        href: "/dispatch",
+      });
   }
   for (const truck of TRUCKS) {
-    const o = maintenanceOutlook(truck.id, maintenance, currentOdometer(truck, trips, fuelLogs));
-    if (o.nextPms && o.nextPms.kmLeft < 1500) alerts.push({ icon: Wrench, tone: "warning", title: `${truck.code} PMS due`, detail: o.nextPms.kmLeft >= 0 ? `Due in ${num(o.nextPms.kmLeft)} km (at ${num(o.nextPms.dueKm)} km)` : `Overdue by ${num(-o.nextPms.kmLeft)} km`, href: "/maintenance" });
-    for (const m of o.overdue) alerts.push({ icon: Wrench, tone: "danger", title: `${truck.code} maintenance overdue`, detail: `${m.type} was scheduled ${fmtDay(m.date)}`, href: "/maintenance" });
+    const o = maintenanceOutlook(
+      truck.id,
+      maintenance,
+      currentOdometer(truck, trips, fuelLogs),
+    );
+    if (o.nextPms && o.nextPms.kmLeft < 1500)
+      alerts.push({
+        icon: Wrench,
+        tone: "warning",
+        title: `${truck.code} PMS due`,
+        detail:
+          o.nextPms.kmLeft >= 0
+            ? `Due in ${num(o.nextPms.kmLeft)} km (at ${num(o.nextPms.dueKm)} km)`
+            : `Overdue by ${num(-o.nextPms.kmLeft)} km`,
+        href: "/maintenance",
+      });
+    for (const m of o.overdue)
+      alerts.push({
+        icon: Wrench,
+        tone: "danger",
+        title: `${truck.code} maintenance overdue`,
+        detail: `${m.type} was scheduled ${fmtDay(m.date)}`,
+        href: "/maintenance",
+      });
   }
-  for (const d of documents.filter((x) => documentStatus(x).status !== "Valid")) {
+  for (const d of documents.filter(
+    (x) => documentStatus(x).status !== "Valid",
+  )) {
     const st = documentStatus(d);
-    alerts.push({ icon: FileWarning, tone: st.status === "Expired" ? "danger" : "warning", title: `${d.type} ${st.status === "Expired" ? "expired" : "expiring"}`, detail: `${d.truckId ? truckById(d.truckId).code : "Driver"} · ${st.daysLeft < 0 ? `${-st.daysLeft} days ago` : `in ${st.daysLeft} days`}`, href: "/documents" });
+    alerts.push({
+      icon: FileWarning,
+      tone: st.status === "Expired" ? "danger" : "warning",
+      title: `${d.type} ${st.status === "Expired" ? "expired" : "expiring"}`,
+      detail: `${d.truckId ? truckById(d.truckId).code : "Driver"} · ${st.daysLeft < 0 ? `${-st.daysLeft} days ago` : `in ${st.daysLeft} days`}`,
+      href: "/documents",
+    });
   }
 
-  const topOverdue = [...stats.entries()].filter(([, s]) => s.overdue > 0).sort((a, b) => b[1].overdue - a[1].overdue).slice(0, 5);
+  const topOverdue = [...stats.entries()]
+    .filter(([, s]) => s.overdue > 0)
+    .sort((a, b) => b[1].overdue - a[1].overdue)
+    .slice(0, 5);
+
+  const sortedAlerts = [...alerts].sort(
+    (a, b) => Number(b.tone === "danger") - Number(a.tone === "danger"),
+  );
+  const exportOverview = () =>
+    downloadCsv(`tradeloop-operations-${TODAY}.csv`, [
+      [
+        "Date",
+        "Trip",
+        "Truck",
+        "Status",
+        "Outbound kg",
+        "Return kg",
+        "Revenue PHP",
+        "Costs incl. estimated diesel PHP",
+        "Contribution PHP",
+      ],
+      ...todayTrips.map((trip) => {
+        const m = metrics.get(trip.id)!;
+        return [
+          TODAY,
+          trip.id,
+          truckById(trip.truckId).code,
+          trip.status,
+          m.outboundKg,
+          m.returnKg,
+          m.revenue,
+          m.expenseTotal + m.estimatedDiesel,
+          m.contribution,
+        ];
+      }),
+    ]);
 
   return (
-    <>
-      <PageHeader
-        title="Command center"
-        description={
-          <>
-            Friday, Sep 25 · live as of <b className="text-foreground">{fmtTime(NOW)}</b> — where the trucks are, what they carry, what&apos;s late, what&apos;s empty and who owes us.
-          </>
-        }
-        actions={
-          <>
-            <Button variant="outline" asChild>
-              <Link href="/dispatch">Dispatch</Link>
-            </Button>
-            <Button asChild>
-              <Link href="/jobs/new">
-                <Plus /> New job
-              </Link>
-            </Button>
-          </>
-        }
-      />
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <KPICard label="Active trucks" value={`${activeTrucks} of ${TRUCKS.length}`} icon={Truck} hint={truckStates.map((s) => `${s.truck.code}: ${s.status}`).join(" · ")} href="/trucks" />
-        <KPICard label="Available trucks" value={availableTrucks} icon={Truck} hint={availableTrucks ? "ready for a trip" : "both trucks committed"} tone={availableTrucks ? "success" : "default"} href="/dispatch" />
-        <KPICard label="Active trips" value={activeTrips.length} icon={RouteIcon} hint={activeTrips.map((t) => `${truckById(t.truckId).code} ${t.status.toLowerCase()}`).join(" · ") || "none on the road"} href="/trips" />
-        <KPICard label="Deliveries today" value={`${delivered.length}/${todayDeliveries.length}`} icon={PackageCheck} hint={`${delayed.length} at risk of being late`} tone={delayed.length ? "warning" : "success"} href="/deliveries" />
-        <KPICard label="Jobs awaiting dispatch" value={awaiting.length} icon={Timer} hint={`${kg(sumBy(awaiting, (j) => j.weightKg))} today & tomorrow`} tone={awaiting.length ? "warning" : "success"} href="/dispatch" />
-        <KPICard label="Outbound utilization" value={pct(outUtil)} icon={Gauge} hint="today's trips, gross kg vs payload" href="/loads" />
-        <KPICard label="Return utilization" value={pct(retUtil)} icon={Undo2} hint={`${kg(sumBy(todayM, (m) => Math.max(0, m.capacityKg - m.returnKg)))} empty on the way home`} tone={retUtil < 0.5 ? "warning" : "success"} href="/backhaul" />
-        <KPICard label="Today's freight revenue" value={pesoCompact(todayRevenue)} icon={ClipboardList} hint={`${todayM.reduce((s, m) => s + m.jobs.length, 0)} jobs on today's trips`} />
-        <KPICard label="Today's trip expenses" value={pesoCompact(todayExpenses)} icon={Wallet} hint="logged so far (diesel logged on return)" href="/expenses" />
-        <KPICard label="Outstanding receivables" value={pesoCompact(outstanding)} icon={HandCoins} hint={`${pesoCompact(overdue)} overdue · ${pesoCompact(collectedToday)} collected today`} tone={overdue ? "danger" : "default"} href="/accounts-receivable" />
+    <div className="ops-enter space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="ops-eyebrow mb-2 flex items-center gap-2">
+            <span className="h-px w-5 bg-[#82986c]" /> Your operations, at a
+            glance
+          </div>
+          <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.045em] sm:text-[32px]">
+            Let&apos;s keep things moving
+            <span className="text-[#7a965e]">.</span>
+          </h1>
+          <p className="mt-2 text-[13px] text-muted-foreground">
+            A clear view of your fleet, deliveries and the day ahead.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={exportOverview}>
+            <Download /> Export overview
+          </Button>
+          <Button
+            asChild
+            className="bg-[#c9ecaa] text-[#213323] shadow-none hover:bg-[#b9df96]"
+          >
+            <Link href="/jobs/new">
+              <Plus /> Create shipment
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        {TRUCKS.map((t) => (
-          <TruckStatusCard key={t.id} truck={t} />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="rounded-lg border bg-white p-2">
+            <CalendarDays className="size-3.5 text-muted-foreground" />
+          </span>
+          <span className="font-medium">Friday, 25 September 2026</span>
+          <span className="hidden text-muted-foreground sm:inline">
+            · Today&apos;s overview
+          </span>
+        </div>
+        <span className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-[#82986c]" />
+          Demo snapshot · {fmtTime(NOW)}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-4">
+        {[
+          {
+            label: "Fleet on the move",
+            value: String(activeTrucks).padStart(2, "0"),
+            suffix: `/ ${TRUCKS.length} trucks`,
+            icon: Truck,
+            detail: `${availableTrucks} available for dispatch`,
+            href: "/trucks",
+            color: "bg-[#eef2e8] text-[#65834c]",
+            featured: true,
+          },
+          {
+            label: "Deliveries today",
+            value: String(todayDeliveries.length).padStart(2, "0"),
+            suffix: "deliveries",
+            icon: PackageCheck,
+            detail: `${delivered.length} delivered · ${delayed.length} at risk`,
+            href: "/deliveries",
+            color: "bg-[#edf2fb] text-[#5a7fb1]",
+          },
+          {
+            label: "Awaiting dispatch",
+            value: String(awaiting.length).padStart(2, "0"),
+            suffix: "shipments",
+            icon: Timer,
+            detail: `${kg(sumBy(awaiting, (j) => j.weightKg))} ready to assign`,
+            href: "/dispatch",
+            color: "bg-[#faf0e4] text-[#b8864c]",
+          },
+          {
+            label: "Freight revenue",
+            value: pesoCompact(todayRevenue),
+            suffix: "",
+            icon: CircleDollarSign,
+            detail: `${todayM.reduce((s, m) => s + m.jobs.length, 0)} jobs on today's trips`,
+            href: "/reports",
+            color: "bg-[#f0edf7] text-[#8b73a5]",
+          },
+        ].map((item) => (
+          <Link
+            key={item.label}
+            href={item.href}
+            className={cn(
+              "ops-metric group flex flex-col p-4 sm:p-5",
+              item.featured && "!border-[#d7e5c9] !bg-[#edf3e5]",
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-medium text-muted-foreground sm:text-xs">
+                {item.label}
+              </span>
+              <span
+                className={cn(
+                  "flex size-8 shrink-0 items-center justify-center rounded-lg",
+                  item.color,
+                )}
+              >
+                <item.icon className="size-4" strokeWidth={1.7} />
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-baseline gap-2">
+              <span className="text-[29px] font-semibold tracking-[-0.045em] tabular sm:text-[34px]">
+                {item.value}
+              </span>
+              <span className="text-[10px] text-muted-foreground">
+                {item.suffix}
+              </span>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/5 pt-3 text-[10px] text-muted-foreground">
+              <span>{item.detail}</span>
+              <ArrowUpRight className="size-3.5 shrink-0 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </div>
+          </Link>
         ))}
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <div>
-              <CardTitle>Active trips & trip P&amp;L</CardTitle>
-              <CardDescription>What each trip earns and costs · contribution includes estimated diesel until the fill-up is logged</CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/trips">
-                All trips <ArrowRight />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="px-0 sm:px-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-2 font-medium sm:px-5">Trip</th>
-                    <th className="px-2 py-2 font-medium">Progress</th>
-                    <th className="px-2 py-2 font-medium">Load</th>
-                    <th className="px-2 py-2 text-right font-medium">Revenue</th>
-                    <th className="px-2 py-2 text-right font-medium">Cost</th>
-                    <th className="px-4 py-2 text-right font-medium sm:px-5">Contribution</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trips
-                    .filter((t) => (t.date === TODAY || t.date === TOMORROW || ACTIVE_TRIP_STATUSES.includes(t.status)) && t.status !== "Cancelled")
-                    .sort((a, b) => a.departure.localeCompare(b.departure))
-                    .map((t) => {
-                      const m = metrics.get(t.id)!;
-                      const p = tripProgress(t);
-                      return (
-                        <tr key={t.id} className="border-b last:border-0 hover:bg-muted/30">
-                          <td className="px-4 py-2.5 sm:px-5">
-                            <Link href={`/trips/${t.id}`} className="font-medium text-primary hover:underline">
-                              {truckById(t.truckId).code} · {t.id}
-                            </Link>
-                            <div className="max-w-[260px] truncate text-xs text-muted-foreground">{tripRouteLine(t)}</div>
-                          </td>
-                          <td className="px-2 py-2.5">
-                            <StatusBadge status={t.status} className="text-[10px]" />
-                            <div className="mt-0.5 text-xs text-muted-foreground">
-                              {p.next ? `next: ${p.next.location.name.slice(0, 26)}` : t.status === "Completed" ? "closed" : "—"}
-                            </div>
-                          </td>
-                          <td className="w-40 px-2 py-2.5">
-                            <CapacityBar used={m.outboundKg} capacity={m.capacityKg} showNumbers={false} size="sm" />
-                            <div className="mt-1 text-[11px] text-muted-foreground tabular">
-                              out {pct(m.outUtil)} · ret {pct(m.retUtil)}
-                            </div>
-                          </td>
-                          <td className="px-2 py-2.5 text-right tabular">{pesoCompact(m.revenue)}</td>
-                          <td className="px-2 py-2.5 text-right text-muted-foreground tabular">{pesoCompact(m.expenseTotal + m.estimatedDiesel)}</td>
-                          <td className="px-4 py-2.5 text-right font-semibold text-[oklch(0.45_0.13_150)] tabular sm:px-5">{pesoCompact(m.contribution)}</td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
+        <FleetRoutes />
+        <Card className="overflow-hidden">
+          <CardHeader className="items-center px-5 pt-5 sm:px-6">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="size-4 text-[oklch(0.6_0.14_65)]" /> Needs attention
+                Needs attention{" "}
+                <span className="rounded-md bg-[#fff1e3] px-2 py-0.5 text-[11px] text-[#a06935]">
+                  {alerts.length}
+                </span>
               </CardTitle>
-              <CardDescription>Capacity, delays, maintenance and documents</CardDescription>
+              <CardDescription>
+                A little action. A smoother day.
+              </CardDescription>
             </div>
+            <span className="flex size-8 items-center justify-center rounded-full border">
+              <AlertTriangle className="size-4 text-[#b58a55]" />
+            </span>
           </CardHeader>
-          <CardContent className="grid max-h-[420px] gap-2 overflow-y-auto">
-            {alerts.length === 0 && <p className="text-sm text-muted-foreground">All clear — no operational alerts.</p>}
-            {alerts.map((a, i) => (
-              <Link
-                key={a.title + a.detail + i}
-                href={a.href}
-                className={cn("flex items-start gap-2.5 rounded-lg border p-2.5 text-sm transition-colors", a.tone === "danger" ? "border-danger/25 bg-danger-soft/50 hover:bg-danger-soft" : a.tone === "warning" ? "border-[oklch(0.85_0.08_85)] bg-warning-soft/50 hover:bg-warning-soft" : "hover:bg-muted/40")}
-              >
-                <a.icon className={cn("mt-0.5 size-4 shrink-0", a.tone === "danger" ? "text-danger" : "text-[oklch(0.55_0.13_65)]")} />
-                <div className="min-w-0">
-                  <div className="font-medium">{a.title}</div>
-                  <div className="text-xs text-muted-foreground">{a.detail}</div>
+          <CardContent className="px-5 sm:px-6">
+            <div
+              className={cn(
+                "divide-y",
+                allAlerts && "max-h-[440px] overflow-y-auto",
+              )}
+            >
+              {sortedAlerts
+                .slice(0, allAlerts ? undefined : 3)
+                .map((alert, index) => (
+                  <Link
+                    key={`${alert.title}-${index}`}
+                    href={alert.href}
+                    className="group flex gap-3 py-4 first:pt-1"
+                  >
+                    <span
+                      className={cn(
+                        "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg",
+                        alert.tone === "danger"
+                          ? "bg-[#fbedea] text-[#bd695a]"
+                          : "bg-[#faf1e6] text-[#b3864b]",
+                      )}
+                    >
+                      <alert.icon className="size-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-xs leading-relaxed font-semibold group-hover:text-primary">
+                        {alert.title}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                        {alert.detail}
+                      </p>
+                      <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium text-primary">
+                        Review details <ArrowUpRight className="size-3" />
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              {!alerts.length && (
+                <div className="py-8 text-center">
+                  <CheckCheck className="mx-auto mb-3 size-7 text-success" />
+                  <p className="text-sm font-medium">
+                    You&apos;re all caught up
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    No operational alerts to review.
+                  </p>
                 </div>
-              </Link>
-            ))}
+              )}
+            </div>
+            {alerts.length > 3 && (
+              <button
+                type="button"
+                aria-expanded={allAlerts}
+                onClick={() => setAllAlerts(!allAlerts)}
+                className="mt-2 flex min-h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border text-[11px] font-medium hover:bg-muted"
+              >
+                {allAlerts
+                  ? "Show priority alerts"
+                  : `View all ${alerts.length} alerts`}
+                <ChevronDown
+                  className={cn("size-3.5", allAlerts && "rotate-180")}
+                />
+              </button>
+            )}
+            <Link
+              href="/dispatch"
+              className="mt-4 flex items-center gap-3 rounded-xl bg-[#f3f5ee] p-3.5"
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white text-[#748a59]">
+                <Truck className="size-4" />
+              </span>
+              <div className="flex-1">
+                <div className="text-[11px] font-semibold">
+                  Keep your next trip on track
+                </div>
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  {awaiting.length} shipments awaiting assignment
+                </div>
+              </div>
+              <ArrowRight className="size-4 text-[#748a59]" />
+            </Link>
           </CardContent>
         </Card>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <PackageCheck className="size-4 text-primary" /> Today&apos;s deliveries
-              </CardTitle>
-              <CardDescription>
-                {delivered.length} of {todayDeliveries.length} delivered
-              </CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/deliveries">
-                All <ArrowRight />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="grid max-h-[380px] gap-1.5 overflow-y-auto">
-            {todayDeliveries.length === 0 && <p className="text-sm text-muted-foreground">No deliveries scheduled today.</p>}
-            {todayDeliveries.map((d) => {
-              const job = jobMap.get(d.jobId);
-              const late = delayed.some((x) => x.d.id === d.id);
-              return (
-                <Link key={d.id} href={`/deliveries/${d.id}`} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{customers.get(d.customerId)?.name}</div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {truckById(trips.find((t) => t.id === d.tripId)!.truckId).code} · {job?.cargoDescription} · {d.arrivedAt ? `arrived ${fmtTime(d.arrivedAt)}` : `ETA ${fmtTime(d.eta)}`}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {late && <span className="rounded bg-danger-soft px-1 text-[10px] font-medium text-danger">late</span>}
-                    <StatusBadge status={d.status} icon={false} className="text-[10px]" />
-                  </div>
-                </Link>
-              );
-            })}
-          </CardContent>
-        </Card>
+      <FreightDeliveries />
 
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
+        <FreightPerformance />
         <Card>
-          <CardHeader>
+          <CardHeader className="items-center px-5 pt-5 sm:px-6">
             <div>
-              <CardTitle className="flex items-center gap-2">
-                <Timer className="size-4 text-[oklch(0.55_0.13_65)]" /> Unassigned jobs
-              </CardTitle>
-              <CardDescription>Confirmed bookings not yet on a truck (today & tomorrow)</CardDescription>
+              <CardTitle>Collections overview</CardTitle>
+              <CardDescription>Keep cash flow moving, too.</CardDescription>
             </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/dispatch">
-                Dispatch <ArrowRight />
-              </Link>
-            </Button>
+            <HandCoins className="size-5 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="grid max-h-[380px] gap-1.5 overflow-y-auto">
-            {awaiting.length === 0 && <p className="text-sm text-muted-foreground">Every confirmed job is on a trip.</p>}
-            {awaiting.map((j) => (
-              <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40">
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{customers.get(j.customerId)?.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {j.id} · {fmtDay(j.pickupAt)} · {j.leg === "return" ? `backhaul from ${j.pickup.name}` : j.dropoff.name}
-                  </div>
+          <CardContent className="px-5 sm:px-6">
+            <div className="grid grid-cols-2 gap-4 rounded-xl bg-muted/50 p-4">
+              <div>
+                <div className="text-[10px] text-muted-foreground">
+                  Outstanding
                 </div>
-                <span className="shrink-0 text-xs font-medium tabular">{kg(j.weightKg)}</span>
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <CircleDollarSign className="size-4 text-primary" /> Overdue collections
-              </CardTitle>
-              <CardDescription>
-                {peso(overdue)} overdue of {peso(outstanding)} outstanding
-              </CardDescription>
+                <div className="mt-1 text-xl font-semibold tracking-tight tabular">
+                  {pesoCompact(outstanding)}
+                </div>
+              </div>
+              <div className="border-l pl-4">
+                <div className="text-[10px] text-muted-foreground">
+                  Overdue balance
+                </div>
+                <div className="mt-1 text-xl font-semibold tracking-tight text-[#b76e57] tabular">
+                  {pesoCompact(overdue)}
+                </div>
+              </div>
             </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/accounts-receivable">
-                Aging <ArrowRight />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="px-0 sm:px-0">
+            <div className="ops-eyebrow mt-5 mb-2">Follow up next</div>
             <ul className="divide-y">
-              {topOverdue.length === 0 && <li className="px-5 py-3 text-sm text-muted-foreground">No overdue receivables.</li>}
-              {topOverdue.map(([id, s]) => (
+              {topOverdue.slice(0, 3).map(([id, stat]) => (
                 <li key={id}>
-                  <Link href={`/customers/${id}`} className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-muted/40 sm:px-5">
-                    <div className="min-w-0 truncate text-sm font-medium">{customers.get(id)?.name}</div>
-                    <div className="grid justify-items-end gap-0.5">
-                      <MoneyDisplay amount={s.overdue} className="text-sm font-semibold text-danger" />
-                      <ReceivableBadge daysOverdue={s.oldestOverdueDays} balance={s.overdue} />
-                    </div>
+                  <Link
+                    href={`/customers/${id}`}
+                    className="flex items-center justify-between gap-3 py-3 hover:text-primary"
+                  >
+                    <span className="truncate text-xs font-medium">
+                      {customers.get(id)?.name}
+                    </span>
+                    <span className="flex shrink-0 flex-col items-end gap-1">
+                      <MoneyDisplay
+                        amount={stat.overdue}
+                        className="text-xs font-semibold"
+                      />
+                      <ReceivableBadge
+                        daysOverdue={stat.oldestOverdueDays}
+                        balance={stat.overdue}
+                      />
+                    </span>
                   </Link>
                 </li>
               ))}
             </ul>
-            <div className="flex items-center gap-2 border-t px-4 pt-3 text-xs text-muted-foreground sm:px-5">
-              <Receipt className="size-3.5" /> {peso(collectedToday)} collected so far today
-            </div>
+            {!topOverdue.length && (
+              <p className="py-5 text-xs text-muted-foreground">
+                No overdue accounts. You&apos;re up to date.
+              </p>
+            )}
+            <Link
+              href="/accounts-receivable"
+              className="mt-3 flex items-center justify-between border-t pt-4 text-[11px] font-medium"
+            >
+              Manage receivables <ArrowUpRight className="size-3.5" />
+            </Link>
           </CardContent>
         </Card>
       </div>
-    </>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-[10px] text-muted-foreground">
+        <span>
+          Lucena Fresh Trading & Logistics <span className="px-2">/</span>{" "}
+          Operations workspace
+        </span>
+        <div className="flex flex-wrap items-center gap-4">
+          <Link
+            href="/expenses"
+            className="flex items-center gap-1.5 hover:text-foreground"
+          >
+            <Wallet className="size-3.5" />
+            {peso(todayExpenses)} expenses logged today
+          </Link>
+          <Link
+            href="/payments"
+            className="flex items-center gap-1.5 hover:text-foreground"
+          >
+            <CheckCheck className="size-3.5" />
+            {peso(collectedToday)} collected today
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }
