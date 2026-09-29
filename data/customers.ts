@@ -84,7 +84,17 @@ const ROWS: Row[] = [
   { id: "CUS-045", name: "Bacolod Seafood & Produce Ventures", type: "Distributor", area: "bacolod", line1: "Libertad Public Market Area", brgy: "Brgy. 33", contact: ["Anna Marie Lacson", "Purchasing", "0917 188 4402"], terms: "50% Down, Balance on Arrival", limit: 300000, sp: "ST-02", src: "Facebook Group", since: "2026-07-21", prefs: ["P-GIN", "P-ONR"], ful: "partner", behavior: "prompt", freq: 1, status: "new", hours: "8:00 AM – 5:00 PM", notes: "Converted from Facebook Group lead in July." },
 ];
 
-export const CUSTOMERS: Customer[] = ROWS.map((r) => {
+/** Logistics-only accounts: Quezon shippers and backhaul customers who book freight but do not buy product. */
+const LOGISTICS_ROWS: Row[] = [
+  { id: "CUS-047", name: "Dalahican Seafood Consolidators", type: "Seafood Dealer", area: "lucena", line1: "Bldg. B, Dalahican Fish Port Complex", brgy: "Brgy. Dalahican", contact: ["Rolando Abuel", "Owner", "0917 540 2268"], alt: ["Mylene Abuel", "Dispatch", "0928 116 7045"], terms: "Credit 7 Days", limit: 250000, sp: "ST-02", src: "Referral", since: "2024-02-12", prefs: [], behavior: "prompt", freq: 7, hours: "Cargo drop-off 10:00 PM – 2:00 AM", notes: "Ships sugpo and pusit to Manila buyers 3–4× a week. Books van space the night before via Messenger." },
+  { id: "CUS-048", name: "Tayabas Agri Supply", type: "Agri Trader", area: "tayabas", line1: "Quezon Ave. cor. Mabini St.", brgy: "Brgy. San Roque Zone I", contact: ["Nestor Villaflor", "Owner", "0928 604 3317"], terms: "Credit 7 Days", limit: 150000, sp: "ST-02", src: "Walk-in", since: "2025-03-03", prefs: [], behavior: "average", freq: 5, hours: "Receiving 6:00 AM – 9:00 PM", notes: "Buys onions and potatoes in Valenzuela and Balintawak; we haul them home on return legs." },
+  { id: "CUS-049", name: "Candelaria Produce Traders", type: "Agri Trader", area: "candelaria", line1: "Rizal Ave.", brgy: "Brgy. Poblacion", contact: ["Lucia Barrameda", "Owner", "0935 772 1049"], terms: "COD", limit: 0, sp: "ST-02", src: "Facebook Page", since: "2025-11-17", prefs: [], behavior: "prompt", freq: 4, hours: "Receiving 5:00 PM – 10:00 PM", notes: "Backhaul customer — potatoes, carrots and cabbage from Santa Rosa and Calamba." },
+  { id: "CUS-050", name: "Sariaya Feeds & General Merchandise", type: "General Merchandise", area: "sariaya", line1: "Maharlika Hwy.", brgy: "Brgy. Castañas", contact: ["Benjie Magpantay", "Owner", "0919 330 5582"], terms: "Credit 15 Days", limit: 200000, sp: "ST-02", src: "Referral", since: "2024-10-07", prefs: [], behavior: "slow", freq: 4, hours: "Receiving 7:00 AM – 9:00 PM", notes: "Hauls feeds, rice and dry goods from Calamba and Valenzuela warehouses. Pays late — follow up every Friday." },
+  { id: "CUS-051", name: "Pagbilao Aqua Farmers Cooperative", type: "Cooperative", area: "pagbilao", line1: "Binahaan Rd.", brgy: "Brgy. Binahaan", contact: ["Edna Salvacion", "Manager", "0936 118 2204"], terms: "Credit 15 Days", limit: 180000, sp: "ST-02", src: "Existing Customer Referral", since: "2025-06-09", prefs: [], behavior: "average", freq: 3, hours: "Receiving 7:00 AM – 8:00 PM", notes: "Buys aquaculture feeds and nets in Calamba for member fishpond operators." },
+  { id: "CUS-052", name: "Lucena Frozen Goods Depot", type: "Distributor", area: "lucena", line1: "Diversion Rd.", brgy: "Brgy. Ibabang Dupay", contact: ["Gregorio Tan", "Owner", "0917 205 6681"], terms: "COD", limit: 0, sp: "ST-02", src: "Messenger", since: "2026-08-18", prefs: [], behavior: "prompt", freq: 2, status: "new", hours: "Receiving 6:00 AM – 10:00 PM", notes: "Occasional third-party frozen goods from Caloocan cold storage." },
+];
+
+function toCustomer(r: Row): Customer {
   const area = areaById(r.area);
   const contacts = [
     { name: r.contact[0], position: r.contact[1], phone: r.contact[2], primary: true },
@@ -93,7 +103,7 @@ export const CUSTOMERS: Customer[] = ROWS.map((r) => {
   const addresses = [
     {
       id: `${r.id}-A1`,
-      label: r.ful === "pickup" ? "Business address (bodega pickup)" : "Main receiving",
+      label: r.ful === "pickup" ? "Business address (bodega pickup)" : r.prefs.length === 0 ? "Main address" : "Main receiving",
       line1: r.line1,
       barangay: r.brgy,
       city: area.name,
@@ -107,7 +117,7 @@ export const CUSTOMERS: Customer[] = ROWS.map((r) => {
       ? [{ id: `${r.id}-A2`, label: r.extraAddress.label, line1: r.extraAddress.line1, barangay: r.extraAddress.brgy, city: area.name, province: area.province, areaId: r.area, receivingHours: r.extraAddress.hours }]
       : []),
   ];
-  return {
+  const customer: Customer = {
     id: r.id,
     name: r.name,
     type: r.type,
@@ -127,7 +137,12 @@ export const CUSTOMERS: Customer[] = ROWS.map((r) => {
     paymentBehavior: r.behavior ?? "average",
     frequency: r.freq ?? 5,
   };
-});
+  return customer;
+}
+
+/** Accounts used by the trading (product sales) generator. */
+export const TRADING_CUSTOMERS: Customer[] = ROWS.map(toCustomer);
+export const CUSTOMERS: Customer[] = [...TRADING_CUSTOMERS, ...LOGISTICS_ROWS.map(toCustomer)];
 
 // A few accounts keep a second delivery point.
 CUSTOMERS.find((c) => c.id === "CUS-004")!.addresses.push({

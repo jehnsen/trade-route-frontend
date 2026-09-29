@@ -9,7 +9,7 @@ import { useAppStore } from "@/lib/store";
 import { useTripMetrics } from "@/hooks/use-data";
 import { SUPPLIERS, supplierById } from "@/data/suppliers";
 import { productById, productLabel } from "@/data/products";
-import { routeById } from "@/data/areas";
+import { LUCENA_WAREHOUSE, routeById } from "@/data/areas";
 import { truckById } from "@/data/fleet";
 import { TODAY } from "@/data/company";
 import { itemLoadKg } from "@/lib/calc";
@@ -38,6 +38,7 @@ export interface PODraft {
 
 export function CreatePODialog({ open, onOpenChange, draft }: { open: boolean; onOpenChange: (v: boolean) => void; draft?: PODraft }) {
   const createPO = useAppStore((s) => s.createPO);
+  const createCompanyLoad = useAppStore((s) => s.createCompanyLoad);
   const trips = useAppStore((s) => s.trips);
   const metrics = useTripMetrics();
   const form = useForm<Values>({
@@ -53,7 +54,7 @@ export function CreatePODialog({ open, onOpenChange, draft }: { open: boolean; o
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
   const v = form.watch();
   const supplier = v.supplierId ? supplierById(v.supplierId) : undefined;
-  const tripOptions = trips.filter((t) => t.date >= TODAY && t.status !== "Completed" && (!supplier || routeById(t.routeId).returnAreas.includes(supplier.pickupAreaId)));
+  const tripOptions = trips.filter((t) => t.date >= TODAY && ["Planned", "Loading", "Ready", "Dispatched", "In Transit"].includes(t.status) && (!supplier || routeById(t.routeId).returnAreas.includes(supplier.pickupAreaId)));
   const total = v.items.reduce((s, i) => s + (i.quantity || 0) * (i.unitCost || 0), 0);
   const load = v.items.filter((i) => i.productId).reduce((s, i) => s + itemLoadKg({ productId: i.productId, quantity: i.quantity || 0 }), 0);
   const tripM = v.tripId ? metrics.get(v.tripId) : undefined;
@@ -62,8 +63,15 @@ export function CreatePODialog({ open, onOpenChange, draft }: { open: boolean; o
   const submit = (status: "Draft" | "Sent") =>
     form.handleSubmit((vals) => {
       const trip = vals.tripId ? trips.find((t) => t.id === vals.tripId) : undefined;
-      const id = createPO({ supplierId: vals.supplierId, items: vals.items, pickupDate: trip?.date ?? vals.pickupDate, tripId: vals.tripId || undefined, status, notes: vals.notes || undefined });
-      toast.success(status === "Draft" ? `${id} saved as draft` : `${id} sent to ${supplierById(vals.supplierId).name}`, { description: trip ? `Pickup on ${trip.id} (${truckById(trip.truckId).code})` : undefined });
+      const sup = supplierById(vals.supplierId);
+      const id = createPO({ supplierId: vals.supplierId, items: vals.items, pickupDate: trip?.date ?? vals.pickupDate, status, notes: vals.notes || undefined });
+      // The pickup rides the trip as plain company-owned cargo; the load does not depend on the PO.
+      if (trip)
+        for (const i of vals.items) {
+          const p = productById(i.productId);
+          createCompanyLoad({ cargoDescription: productLabel(p), cargoCategory: p.category === "seafood" ? "Seafood" : "Produce", quantity: i.quantity, unit: p.unit === "pc" ? "pc" : "kg", weightKg: Math.round(itemLoadKg({ productId: i.productId, quantity: i.quantity })), leg: "return", pickup: { name: sup.pickupLocation, areaId: sup.pickupAreaId }, destination: LUCENA_WAREHOUSE, estimatedValue: Math.round(i.quantity * i.unitCost), handlingNotes: `Company purchase (${id}) — pay supplier on pickup.`, tripId: trip.id });
+        }
+      toast.success(status === "Draft" ? `${id} saved as draft` : `${id} sent to ${sup.name}`, { description: trip ? `Pickup added as company cargo on ${trip.id} (${truckById(trip.truckId).code})` : undefined });
       onOpenChange(false);
     })();
 
@@ -72,7 +80,7 @@ export function CreatePODialog({ open, onOpenChange, draft }: { open: boolean; o
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Create purchase order</DialogTitle>
-          <DialogDescription>Assign it to a return trip to use empty backhaul capacity instead of paying for delivery.</DialogDescription>
+          <DialogDescription>Optionally pick a return trip — the pickup is added to that trip as company-owned cargo, using empty backhaul capacity.</DialogDescription>
         </DialogHeader>
         <form noValidate onSubmit={(ev) => ev.preventDefault()} className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -102,7 +110,7 @@ export function CreatePODialog({ open, onOpenChange, draft }: { open: boolean; o
                       <SelectItem value="none">{supplier?.pickupAreaId && ["lucena", "pagbilao", "tayabas", "sariaya", "candelaria"].includes(supplier.pickupAreaId) ? "Supplier delivers to bodega" : "Not assigned yet"}</SelectItem>
                       {tripOptions.map((t) => (
                         <SelectItem key={t.id} value={t.id}>
-                          {t.id} · {truckById(t.truckId).code} · {fmtDay(t.date)} · {kg(metrics.get(t.id)!.capacityKg - metrics.get(t.id)!.returnLoadKg)} free
+                          {t.id} · {truckById(t.truckId).code} · {fmtDay(t.date)} · {kg(metrics.get(t.id)!.capacityKg - metrics.get(t.id)!.returnKg)} free
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -156,8 +164,8 @@ export function CreatePODialog({ open, onOpenChange, draft }: { open: boolean; o
               PO value <b className="tabular">{peso(total)}</b> · {kg(load)}
             </span>
             {tripM && (
-              <span className={tripM.returnLoadKg + load > tripM.capacityKg ? "font-medium text-danger" : "text-muted-foreground"}>
-                Return load after PO: {kg(tripM.returnLoadKg + load)} / {kg(tripM.capacityKg)}
+              <span className={tripM.returnKg + load > tripM.capacityKg ? "font-medium text-danger" : "text-muted-foreground"}>
+                Return load after pickup: {kg(tripM.returnKg + load)} / {kg(tripM.capacityKg)}
               </span>
             )}
           </div>

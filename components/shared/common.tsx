@@ -17,12 +17,13 @@ import {
   type LucideIcon,
   Inbox,
 } from "lucide-react";
-import type { Address, OrderSource } from "@/types";
+import type { Address, JobSource, OrderSource } from "@/types";
 import { cn } from "@/lib/utils";
 import { peso, pesoCompact, kg, pct } from "@/lib/format";
 import { Card } from "@/components/ui/primitives";
 import { Input } from "@/components/ui/primitives";
 import { Tip } from "@/components/ui/overlays";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/form-controls";
 
 // ─── PageHeader ─────────────────────────────────────────────────────────────
 export interface Crumb {
@@ -254,6 +255,23 @@ export function FilterBar({ search, onSearch, placeholder = "Search…", childre
   );
 }
 
+export function FilterSelect({ value, onChange, options, label, className }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; label: string; className?: string }) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className={className ?? "w-full sm:w-44"} aria-label={label}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 // ─── Order source ───────────────────────────────────────────────────────────
 const SOURCE_META: Record<OrderSource, { icon: LucideIcon; className: string; short: string }> = {
   "Customer Portal": { icon: Globe, className: "bg-accent text-accent-foreground", short: "Portal" },
@@ -277,6 +295,29 @@ export function SourceBadge({ source, short }: { source: OrderSource; short?: bo
 export const ORDER_SOURCES = Object.keys(SOURCE_META) as OrderSource[];
 export { SOURCE_META };
 
+// ─── Job (booking) source ───────────────────────────────────────────────────
+const JOB_SOURCE_META: Record<JobSource, { icon: LucideIcon; className: string }> = {
+  Phone: { icon: Phone, className: "bg-muted text-foreground/80" },
+  Messenger: { icon: MessageCircle, className: "bg-[oklch(0.95_0.03_265)] text-[oklch(0.45_0.17_265)]" },
+  Facebook: { icon: Users, className: "bg-[oklch(0.95_0.03_255)] text-[oklch(0.45_0.15_255)]" },
+  "Sales Staff": { icon: UserRound, className: "bg-warning-soft text-[oklch(0.48_0.12_65)]" },
+  "Repeat Customer": { icon: Repeat, className: "bg-success-soft text-[oklch(0.42_0.12_150)]" },
+  Referral: { icon: Users, className: "bg-accent text-accent-foreground" },
+  "Customer Portal": { icon: Globe, className: "bg-accent text-accent-foreground" },
+};
+export const JOB_SOURCES = Object.keys(JOB_SOURCE_META) as JobSource[];
+
+export function JobSourceBadge({ source }: { source: JobSource }) {
+  const m = JOB_SOURCE_META[source];
+  const Icon = m.icon;
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap", m.className)}>
+      <Icon className="size-3" />
+      {source}
+    </span>
+  );
+}
+
 // ─── Small helpers ──────────────────────────────────────────────────────────
 export function Stat({ label, value, className, sub }: { label: string; value: React.ReactNode; className?: string; sub?: React.ReactNode }) {
   return (
@@ -299,4 +340,18 @@ export function SectionTitle({ children, action, className }: { children: React.
 
 export function DemoPriceNote({ className }: { className?: string }) {
   return <p className={cn("text-xs text-muted-foreground", className)}>Prices shown are illustrative demo values only — not live market prices.</p>;
+}
+
+export function DemoRateNote({ className }: { className?: string }) {
+  return <p className={cn("text-xs text-muted-foreground", className)}>Freight rates and diesel prices are illustrative demo values — not published tariffs.</p>;
+}
+
+/** Compact label/value row used in financial summaries. */
+export function LineItem({ label, value, strong, muted, className }: { label: React.ReactNode; value: React.ReactNode; strong?: boolean; muted?: boolean; className?: string }) {
+  return (
+    <div className={cn("flex justify-between gap-3", muted && "text-muted-foreground", className)}>
+      <span>{label}</span>
+      <span className={cn("tabular", strong && "font-semibold")}>{value}</span>
+    </div>
+  );
 }

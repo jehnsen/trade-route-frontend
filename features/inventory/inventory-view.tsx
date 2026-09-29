@@ -10,7 +10,6 @@ import { useStock } from "@/hooks/use-data";
 import { NOW } from "@/data/company";
 import { productById, productLabel } from "@/data/products";
 import { supplierById } from "@/data/suppliers";
-import { truckById } from "@/data/fleet";
 import { areaName } from "@/data/areas";
 import { fmtDateShort, fmtTime, kg, peso, pesoCompact, qty } from "@/lib/format";
 import { sumBy } from "@/lib/utils";
@@ -42,7 +41,6 @@ const LOCATIONS: InventoryLocation[] = ["Lucena Main Warehouse", "Truck 01", "Tr
 export function InventoryView() {
   const inventory = useAppStore((s) => s.inventory);
   const orders = useAppStore((s) => s.orders);
-  const trips = useAppStore((s) => s.trips);
   const pos = useAppStore((s) => s.purchaseOrders);
   const stock = useStock();
   const [q, setQ] = React.useState("");
@@ -65,15 +63,9 @@ export function InventoryView() {
     for (const b of inventory.filter((x) => x.location === "Temporary Manila Pickup")) {
       out.push({ id: b.id, productId: b.productId, location: b.location, locationNote: b.note, source: b.source, available: b.onHand, reserved: 0, incoming: 0, damaged: 0, unitCost: b.unitCost, receivedAt: b.receivedAt, status: "Staged" });
     }
-    // On trucks: undelivered outbound cargo and picked-up return loads
-    for (const t of trips.filter((x) => x.status === "In Transit" || x.status === "Returning")) {
-      const truckCode = truckById(t.truckId).code as InventoryLocation;
-      const cargo = new Map<string, number>();
-      for (const o of orders) if (o.tripId === t.id && o.status === "Out for Delivery") for (const i of o.items) cargo.set(i.productId, (cargo.get(i.productId) ?? 0) + i.quantity);
-      let n = 0;
-      for (const [pid, qn] of cargo) out.push({ id: `${t.id}-OUT-${++n}`, productId: pid, location: truckCode, locationNote: "Outbound — for delivery", source: `${t.id} outbound`, available: 0, reserved: qn, incoming: 0, damaged: 0, unitCost: productById(pid).cost, href: `/trips/${t.id}`, status: "In transit" });
-      for (const p of pos.filter((x) => x.tripId === t.id && x.status === "Picked Up")) for (const i of p.items) out.push({ id: `${p.id}-${i.productId}`, productId: i.productId, location: truckCode, locationNote: "Return load", source: supplierById(p.supplierId).name, available: 0, reserved: 0, incoming: i.quantity, damaged: 0, unitCost: i.unitCost, href: `/purchase-orders?po=${p.id}`, status: "Return load" });
-    }
+    // Stock riding on a truck is tracked as company-owned cargo on the Loads board, not here.
+    for (const o of orders.filter((x) => x.status === "Out for Delivery"))
+      for (const i of o.items) out.push({ id: `${o.id}-${i.productId}`, productId: i.productId, location: "Lucena Main Warehouse", locationNote: `Out for delivery · ${o.id}`, source: "Released to customer delivery", available: 0, reserved: i.quantity, incoming: 0, damaged: 0, unitCost: productById(i.productId).cost, href: `/orders/${o.id}`, status: "In transit" });
     // Supplier pickups not yet collected (incoming on return legs) and supplier deliveries
     for (const p of pos.filter((x) => ["Sent", "Confirmed", "Ready for Pickup"].includes(x.status))) {
       for (const i of p.items)
@@ -81,7 +73,7 @@ export function InventoryView() {
           id: `${p.id}-${i.productId}`,
           productId: i.productId,
           location: "Supplier Pickup",
-          locationNote: p.tripId ? `${areaName(p.pickupAreaId)} · on ${p.tripId}${p.pickupEta ? ` ${fmtTime(p.pickupEta)}` : ""}` : p.deliveredBySupplier ? "Supplier delivers to bodega" : `${areaName(p.pickupAreaId)} · no trip yet`,
+          locationNote: p.deliveredBySupplier ? "Supplier delivers to bodega" : `${areaName(p.pickupAreaId)} · pickup ${p.pickupEta ? fmtTime(p.pickupEta) : p.pickupDate}`,
           source: supplierById(p.supplierId).name,
           available: 0,
           reserved: 0,
@@ -93,7 +85,7 @@ export function InventoryView() {
         });
     }
     return out;
-  }, [inventory, orders, trips, pos, stock]);
+  }, [inventory, orders, pos, stock]);
 
   const shown = rows.filter((r) => loc === "all" || r.location === loc);
   const all = [...stock.values()];

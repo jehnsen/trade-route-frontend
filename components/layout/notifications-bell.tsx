@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Bell, CheckCircle2, CircleDollarSign, Info, Megaphone, Package, ShoppingCart, Truck, Undo2 } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, CircleDollarSign, ClipboardList, Info, Megaphone, PackageCheck, ShoppingCart, Truck, Undo2, Wrench } from "lucide-react";
 import type { AppNotification, NotificationKind } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -12,13 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/overlays";
 
 export const KIND_ICON: Record<NotificationKind, React.ComponentType<{ className?: string }>> = {
-  order: ShoppingCart,
+  job: ClipboardList,
   trip: Truck,
+  delivery: PackageCheck,
   finance: CircleDollarSign,
-  inventory: Package,
+  fleet: Wrench,
   backhaul: Undo2,
-  procurement: Package,
   lead: Megaphone,
+  order: ShoppingCart,
 };
 
 export function severityIcon(sev: AppNotification["severity"]) {

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Clock, Mail, MapPin, MessageCircle, Phone, ShieldCheck, UserRound } from "lucide-react";
 import { useAppStore, PORTAL_CUSTOMER_ID } from "@/lib/store";
-import { useCustomerStats } from "@/hooks/use-data";
+import { useSalesCustomerStats } from "@/hooks/use-data";
 import { COMPANY, staffById } from "@/data/company";
 import { productById, productLabel } from "@/data/products";
 import { fmtDate, peso } from "@/lib/format";
@@ -17,7 +17,7 @@ import { AddressDisplay, CapacityBar, Stat } from "@/components/shared/common";
 
 export function PortalAccount() {
   const customer = useAppStore((s) => s.customers.find((c) => c.id === PORTAL_CUSTOMER_ID))!;
-  const stats = useCustomerStats().get(PORTAL_CUSTOMER_ID)!;
+  const stats = useSalesCustomerStats().get(PORTAL_CUSTOMER_ID)!;
   const sp = staffById(customer.salespersonId);
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">

@@ -16,7 +16,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import { DemoPriceNote, FilterBar, PageHeader } from "@/components/shared/common";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ProductImage } from "@/components/shared/product-image";
-import { FilterSelect } from "@/features/orders/orders-view";
+import { FilterSelect } from "@/components/shared/common";
 
 export function CatalogView({ initialQ }: { initialQ?: string }) {
   const stock = useStock();

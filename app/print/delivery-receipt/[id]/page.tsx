@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DeliveryReceipt } from "@/features/orders/delivery-receipt";
+import { DeliveryReceipt } from "@/features/deliveries/delivery-receipt";
 
 export const metadata: Metadata = { title: "Delivery Receipt" };
 

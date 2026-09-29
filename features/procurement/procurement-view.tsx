@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCircle2, ClipboardList, Info, PackagePlus, ShoppingBasket, Star, Truck, Undo2 } from "lucide-react";
+import { CheckCircle2, ClipboardList, Info, PackagePlus, ShoppingBasket, Star, Undo2 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useStock, useTripMetrics } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
@@ -98,7 +98,7 @@ export function ProcurementView() {
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KPICard label="Products to procure" value={reqRows.filter((r) => r.need > 0).length} icon={ShoppingBasket} tone="warning" hint={`${kg(sumBy(reqRows, (r) => r.need * r.p.unitWeightKg))} total shortfall`} />
         <KPICard label="Open purchase orders" value={openPOs.length} icon={ClipboardList} hint={pesoCompact(sumBy(openPOs, poTotal))} href="/purchase-orders" />
-        <KPICard label="Backhaul capacity free" value={kg(sumBy(upcomingTrips, (t) => metrics.get(t.id)!.capacityKg - metrics.get(t.id)!.returnLoadKg))} icon={Undo2} hint="today + tomorrow return legs" href="/backhaul" />
+        <KPICard label="Backhaul capacity free" value={kg(sumBy(upcomingTrips, (t) => metrics.get(t.id)!.capacityKg - metrics.get(t.id)!.returnKg))} icon={Undo2} hint="today + tomorrow return legs" href="/backhaul" />
         <KPICard label="Quotes received today" value={SUPPLIER_QUOTES.filter((q) => q.quotedAt.startsWith(TODAY)).length} icon={CheckCircle2} hint={`from ${new Set(SUPPLIER_QUOTES.map((q) => q.supplierId)).size} suppliers`} />
       </div>
 
@@ -214,7 +214,7 @@ export function ProcurementView() {
               <TableHead>Supplier</TableHead>
               <TableHead>Products</TableHead>
               <TableHead>Pickup</TableHead>
-              <TableHead>Trip</TableHead>
+              <TableHead>Collection</TableHead>
               <TableHead className="text-right">Value</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -233,16 +233,8 @@ export function ProcurementView() {
                   {fmtDateShort(p.pickupDate)}
                   <div className="text-muted-foreground">{p.deliveredBySupplier ? "Supplier delivers" : p.pickupLocation}</div>
                 </TableCell>
-                <TableCell className="text-xs">
-                  {p.tripId ? (
-                    <Link href={`/trips/${p.tripId}`} className="inline-flex items-center gap-1 text-primary hover:underline">
-                      <Truck className="size-3.5" /> {p.tripId}
-                    </Link>
-                  ) : p.deliveredBySupplier ? (
-                    "—"
-                  ) : (
-                    <span className="text-[oklch(0.55_0.13_65)]">Unassigned</span>
-                  )}
+                <TableCell className="text-xs text-muted-foreground">
+                  {p.deliveredBySupplier ? "Supplier delivers" : "Our pickup (company cargo)"}
                 </TableCell>
                 <TableCell className="text-right tabular">{peso(poTotal(p))}</TableCell>
                 <TableCell>

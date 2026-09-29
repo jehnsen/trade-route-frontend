@@ -5,25 +5,19 @@ import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { addDays, format, parseISO } from "date-fns";
-import { AlertTriangle, CheckCircle2, Truck } from "lucide-react";
-import type { Order, PaymentMethod } from "@/types";
+import { CheckCircle2 } from "lucide-react";
+import type { Order, SalesPaymentMethod } from "@/types";
 import { useAppStore } from "@/lib/store";
-import { useInvoiceMap, useTripMetrics } from "@/hooks/use-data";
-import { routeById } from "@/data/areas";
-import { truckById, driverById } from "@/data/fleet";
+import { useSalesInvoiceMap } from "@/hooks/use-data";
 import { productById, productLabel } from "@/data/products";
-import { invoiceIdForOrder, orderBilledAmount, orderLoadKg, orderTotal } from "@/lib/calc";
-import { fmtDay, fmtTime, kg, peso } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { invoiceIdForOrder, orderBilledAmount, orderTotal } from "@/lib/calc";
+import { peso } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/overlays";
 import { Input, Textarea } from "@/components/ui/primitives";
 import { DatePicker, Field, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/form-controls";
-import { CapacityBar } from "@/components/shared/common";
-import { StatusBadge } from "@/components/shared/status-badge";
 
-export const PAYMENT_METHODS: PaymentMethod[] = ["Cash", "GCash", "Maya", "Bank Transfer", "Check", "COD", "Credit Settlement"];
+export const SALES_PAYMENT_METHODS: SalesPaymentMethod[] = ["Cash", "GCash", "Maya", "Bank Transfer", "Check", "COD", "Credit Settlement"];
 
 // ─── Record payment ─────────────────────────────────────────────────────────
 const paymentSchema = z.object({
@@ -35,8 +29,8 @@ const paymentSchema = z.object({
 type PaymentValues = z.infer<typeof paymentSchema>;
 
 export function RecordPaymentDialog({ order, open, onOpenChange }: { order: Order; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const invoice = useInvoiceMap().get(order.id);
-  const record = useAppStore((s) => s.recordPayment);
+  const invoice = useSalesInvoiceMap().get(order.id);
+  const record = useAppStore((s) => s.recordSalesPayment);
   const balance = invoice ? invoice.balance : orderBilledAmount(order);
   const form = useForm<PaymentValues>({
     resolver: zodResolver(paymentSchema),
@@ -78,7 +72,7 @@ export function RecordPaymentDialog({ order, open, onOpenChange }: { order: Orde
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {PAYMENT_METHODS.map((m) => (
+                      {SALES_PAYMENT_METHODS.map((m) => (
                         <SelectItem key={m} value={m}>
                           {m}
                         </SelectItem>
@@ -110,96 +104,6 @@ export function RecordPaymentDialog({ order, open, onOpenChange }: { order: Orde
   );
 }
 
-// ─── Assign to trip ─────────────────────────────────────────────────────────
-export function AssignTripDialog({ order, open, onOpenChange }: { order: Order; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const trips = useAppStore((s) => s.trips);
-  const assign = useAppStore((s) => s.assignOrderToTrip);
-  const metrics = useTripMetrics();
-  const lastDate = format(addDays(parseISO(order.deliveryDate), 3), "yyyy-MM-dd");
-  const candidates = trips.filter((t) => t.date >= order.deliveryDate && t.date <= lastDate && (t.status === "Planned" || t.status === "Loading"));
-  const [selected, setSelected] = React.useState<string | undefined>(order.tripId);
-  const load = orderLoadKg(order);
-  const confirm = () => {
-    if (!selected) return;
-    assign(order.id, selected);
-    toast.success(`${order.id} assigned to ${selected}`, { description: `${truckById(trips.find((t) => t.id === selected)!.truckId).code} · ${kg(load)} added to the load` });
-    onOpenChange(false);
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Assign {order.id} to a trip</DialogTitle>
-          <DialogDescription>
-            Estimated load {kg(load)} incl. ice & packaging · requested {fmtDay(order.deliveryDate)}
-          </DialogDescription>
-        </DialogHeader>
-        {order.fulfillment !== "truck" ? (
-          <p className="rounded-md bg-muted px-3 py-2 text-sm">This order is fulfilled by {order.fulfillment === "pickup" ? "bodega pickup" : "the sea-freight partner"} and does not ride on our trucks.</p>
-        ) : candidates.length === 0 ? (
-          <p className="rounded-md bg-muted px-3 py-2 text-sm">No planned or loading trips on or after the requested date. Create the trip from the Dispatch Board first.</p>
-        ) : (
-          <div className="grid gap-2" role="radiogroup" aria-label="Trips">
-            {candidates.map((t) => {
-              const m = metrics.get(t.id)!;
-              const already = order.tripId === t.id;
-              const after = m.outboundLoadKg + (already ? 0 : load);
-              const over = after > m.capacityKg;
-              return (
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={selected === t.id}
-                  key={t.id}
-                  onClick={() => setSelected(t.id)}
-                  className={cn("grid gap-2 rounded-lg border p-3 text-left transition-colors cursor-pointer", selected === t.id ? "border-primary bg-accent/50 ring-2 ring-primary/20" : "hover:bg-muted/50")}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 font-medium">
-                      <Truck className="size-4 text-primary" /> {t.id} · {truckById(t.truckId).code}
-                    </div>
-                    <StatusBadge status={t.status} />
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {routeById(t.routeId).name} · departs {fmtDay(t.date)} {fmtTime(t.departure)} · {driverById(t.driverId).name}
-                  </div>
-                  <CapacityBar used={after} capacity={m.capacityKg} label={already ? "Current load" : "Load after assigning"} size="sm" />
-                  {over && (
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-danger">
-                      <AlertTriangle className="size-3.5" /> Truck capacity exceeded by {kg(after - m.capacityKg)}.
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <DialogFooter>
-          {order.tripId && (
-            <Button
-              variant="ghost"
-              className="sm:mr-auto"
-              onClick={() => {
-                assign(order.id, null);
-                toast.success(`${order.id} removed from ${order.tripId}`);
-                onOpenChange(false);
-              }}
-            >
-              Remove from trip
-            </Button>
-          )}
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={confirm} disabled={!selected || selected === order.tripId}>
-            Assign to trip
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── Cancel ─────────────────────────────────────────────────────────────────
 export function CancelOrderDialog({ order, open, onOpenChange }: { order: Order; open: boolean; onOpenChange: (v: boolean) => void }) {
   const cancel = useAppStore((s) => s.cancelOrder);
@@ -210,7 +114,7 @@ export function CancelOrderDialog({ order, open, onOpenChange }: { order: Order;
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Cancel {order.id}?</DialogTitle>
-          <DialogDescription>This releases reserved stock{order.tripId ? ` and removes the drop from ${order.tripId}` : ""}. The customer should be informed via their usual channel.</DialogDescription>
+          <DialogDescription>This releases reserved stock. The customer should be informed via their usual channel.</DialogDescription>
         </DialogHeader>
         <Field label="Reason for cancellation" htmlFor="cancel-reason" error={error} required>
           <Textarea id="cancel-reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Customer postponed to Monday" aria-invalid={!!error} />

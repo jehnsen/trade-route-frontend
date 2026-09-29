@@ -15,7 +15,7 @@ import { Card } from "@/components/ui/primitives";
 import { DataTable } from "@/components/data-table/data-table";
 import { FilterBar, PageHeader } from "@/components/shared/common";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { FilterSelect } from "@/features/orders/orders-view";
+import { FilterSelect } from "@/components/shared/common";
 
 export interface SupplierStats {
   pos: PurchaseOrder[];

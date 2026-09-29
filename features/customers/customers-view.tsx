@@ -14,7 +14,7 @@ import { useAppStore } from "@/lib/store";
 import { useCustomerStats } from "@/hooks/use-data";
 import { AREAS, areaById, areaName } from "@/data/areas";
 import { STAFF } from "@/data/company";
-import { frequencyLabel, type CustomerStats } from "@/lib/selectors";
+import { frequencyLabel, type CustomerStats } from "@/lib/logistics";
 import { fmtDateShort, peso, pesoCompact, relativeDay } from "@/lib/format";
 import { downloadCsv } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,9 +24,9 @@ import { Field, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } 
 import { DataTable } from "@/components/data-table/data-table";
 import { FilterBar, KPICard, MoneyDisplay, PageHeader, EmptyState } from "@/components/shared/common";
 import { StatusBadge, ReceivableBadge } from "@/components/shared/status-badge";
-import { FilterSelect } from "@/features/orders/orders-view";
+import { FilterSelect } from "@/components/shared/common";
 
-export const CUSTOMER_TYPES: CustomerType[] = ["Palengke Vendor", "Restaurant", "Hotel", "Resort", "Seafood Dealer", "Distributor", "Retailer", "Grocery", "Catering Company"];
+export const CUSTOMER_TYPES: CustomerType[] = ["Seafood Dealer", "Distributor", "Agri Trader", "Cooperative", "General Merchandise", "Palengke Vendor", "Grocery", "Retailer", "Restaurant", "Hotel", "Resort", "Catering Company"];
 
 interface Row {
   c: Customer;
@@ -55,7 +55,7 @@ export function CustomersView() {
 
   const totalOutstanding = rows.reduce((a, r) => a + r.s.outstanding, 0);
   const overdueCount = rows.filter((r) => r.s.overdue > 0).length;
-  const activeCount = rows.filter((r) => r.s.orders > 0).length;
+  const activeCount = rows.filter((r) => r.s.jobs > 0).length;
   const newCount = customers.filter((c) => c.status === "new").length;
 
   const columns: ColumnDef<Row, unknown>[] = [
@@ -76,9 +76,9 @@ export function CustomersView() {
     { id: "location", header: "Location", accessorFn: (r) => areaName(r.c.areaId), cell: ({ row }) => <div className="whitespace-nowrap">{areaName(row.original.c.areaId)}<div className="text-xs text-muted-foreground">{areaById(row.original.c.areaId).region}</div></div> },
     { id: "contact", header: "Contact Person", accessorFn: (r) => r.c.contacts[0].name, cell: ({ row }) => <span className="whitespace-nowrap">{row.original.c.contacts[0].name}</span> },
     { id: "phone", header: "Phone", accessorFn: (r) => r.c.contacts[0].phone, cell: ({ getValue }) => <span className="whitespace-nowrap tabular">{getValue() as string}</span> },
-    { id: "avg", header: "Average Order", accessorFn: (r) => r.s.avgOrder, meta: { align: "right" }, cell: ({ row }) => (row.original.s.avgOrder ? peso(row.original.s.avgOrder) : "—") },
-    { id: "freq", header: "Order Frequency", accessorFn: (r) => r.s.ordersPerWeek, cell: ({ row }) => <span className="whitespace-nowrap">{frequencyLabel(row.original.s.ordersPerWeek)}</span> },
-    { id: "sales", header: "Total Sales", accessorFn: (r) => r.s.lifetimeSales, meta: { align: "right" }, cell: ({ row }) => <MoneyDisplay amount={row.original.s.lifetimeSales} compact className="font-medium" /> },
+    { id: "avg", header: "Avg. Job", accessorFn: (r) => r.s.avgJob, meta: { align: "right" }, cell: ({ row }) => (row.original.s.avgJob ? peso(row.original.s.avgJob) : "—") },
+    { id: "freq", header: "Booking Frequency", accessorFn: (r) => r.s.jobsPerWeek, cell: ({ row }) => <span className="whitespace-nowrap">{frequencyLabel(row.original.s.jobsPerWeek)}</span> },
+    { id: "sales", header: "Lifetime Freight", accessorFn: (r) => r.s.lifetimeRevenue, meta: { align: "right" }, cell: ({ row }) => <MoneyDisplay amount={row.original.s.lifetimeRevenue} compact className="font-medium" /> },
     {
       id: "outstanding",
       header: "Outstanding Balance",
@@ -94,7 +94,7 @@ export function CustomersView() {
           <span className="text-muted-foreground">—</span>
         ),
     },
-    { id: "last", header: "Last Order", accessorFn: (r) => r.s.lastOrder ?? "", cell: ({ row }) => (row.original.s.lastOrder ? <span className="whitespace-nowrap">{relativeDay(row.original.s.lastOrder)}</span> : "—") },
+    { id: "last", header: "Last Booking", accessorFn: (r) => r.s.lastJob ?? "", cell: ({ row }) => (row.original.s.lastJob ? <span className="whitespace-nowrap">{relativeDay(row.original.s.lastJob)}</span> : "—") },
     { id: "status", header: "Status", accessorFn: (r) => r.c.status, cell: ({ row }) => <StatusBadge status={row.original.c.status} icon={false} /> },
   ];
 
@@ -102,13 +102,13 @@ export function CustomersView() {
     <>
       <PageHeader
         title="Customers"
-        description="Every palengke vendor, dealer, restaurant and distributor — with terms, balances and buying patterns in one place."
+        description="Shippers and consignees — seafood dealers, distributors, agri traders and vendors — with freight terms, balances and booking patterns in one place."
         actions={
           <>
             <Button
               variant="outline"
               onClick={() => {
-                downloadCsv("freshroute-customers.csv", [["ID", "Customer", "Type", "Location", "Contact", "Phone", "Terms", "Outstanding", "Lifetime sales"], ...filtered.map((r) => [r.c.id, r.c.name, r.c.type, areaName(r.c.areaId), r.c.contacts[0].name, r.c.contacts[0].phone, r.c.paymentTerms, r.s.outstanding, r.s.lifetimeSales])]);
+                downloadCsv("tradeloop-customers.csv", [["ID", "Customer", "Type", "Location", "Contact", "Phone", "Terms", "Outstanding", "Lifetime freight"], ...filtered.map((r) => [r.c.id, r.c.name, r.c.type, areaName(r.c.areaId), r.c.contacts[0].name, r.c.contacts[0].phone, r.c.paymentTerms, r.s.outstanding, r.s.lifetimeRevenue])]);
                 toast.success(`Exported ${filtered.length} customers`);
               }}
             >
@@ -122,7 +122,7 @@ export function CustomersView() {
       />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KPICard label="Customers" value={customers.length} icon={Users} hint={`${activeCount} ordered in the last 30 days`} />
-        <KPICard label="New accounts" value={newCount} icon={Plus} hint="first orders in the last 60 days" />
+        <KPICard label="New accounts" value={newCount} icon={Plus} hint="first bookings in the last 60 days" />
         <KPICard label="Total outstanding" value={pesoCompact(totalOutstanding)} icon={HandCoins} hint="across all open invoices" href="/accounts-receivable" />
         <KPICard label="Customers overdue" value={overdueCount} icon={AlertTriangle} tone="danger" hint="need collection follow-up" href="/accounts-receivable" />
       </div>
@@ -151,7 +151,7 @@ export function CustomersView() {
                 {r.c.type} · {areaName(r.c.areaId)} · {r.c.contacts[0].name}
               </div>
               <div className="flex justify-between text-sm">
-                <span>Last order {r.s.lastOrder ? fmtDateShort(r.s.lastOrder) : "—"}</span>
+                <span>Last booking {r.s.lastJob ? fmtDateShort(r.s.lastJob) : "—"}</span>
                 <span className={r.s.overdue ? "font-semibold text-danger" : "font-semibold"}>{peso(r.s.outstanding)}</span>
               </div>
             </div>
@@ -194,7 +194,7 @@ function AddCustomerDialog({ open, onOpenChange }: { open: boolean; onOpenChange
       salespersonId: v.salespersonId,
       leadSource: "Walk-in",
       preferredProductIds: [],
-      fulfillment: area.interIsland ? "partner" : area.region === "Quezon Province" ? "pickup" : "truck",
+      fulfillment: area.interIsland ? "partner" : "truck",
       notes: "",
       deliveryFee: 0,
     });
@@ -208,7 +208,7 @@ function AddCustomerDialog({ open, onOpenChange }: { open: boolean; onOpenChange
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add customer</DialogTitle>
-          <DialogDescription>New accounts start as COD. Credit terms need owner approval after 3 paid orders.</DialogDescription>
+          <DialogDescription>New accounts start as COD. Credit terms need owner approval after 3 paid bookings.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} noValidate className="grid gap-4 sm:grid-cols-2">
           <Field label="Business / trading name" htmlFor="nc-name" error={e.name?.message} required className="sm:col-span-2">

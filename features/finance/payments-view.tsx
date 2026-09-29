@@ -7,7 +7,7 @@ import { CalendarCheck, CreditCard, Download, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import type { Payment } from "@/types";
 import { useAppStore } from "@/lib/store";
-import { useCustomerMap } from "@/hooks/use-data";
+import { useCustomerMap, useInvoices } from "@/hooks/use-data";
 import { TODAY } from "@/data/company";
 import { fmtDateTime, peso, pesoCompact, pct } from "@/lib/format";
 import { downloadCsv, sumBy } from "@/lib/utils";
@@ -16,12 +16,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DataTable } from "@/components/data-table/data-table";
 import { FilterBar, KPICard, PageHeader } from "@/components/shared/common";
 import { RankedBars } from "@/components/charts/charts";
-import { FilterSelect } from "@/features/orders/orders-view";
-import { PAYMENT_METHODS } from "@/features/orders/order-dialogs";
+import { FilterSelect } from "@/components/shared/common";
+import { PAYMENT_METHODS } from "./record-payment-dialog";
 
 export function PaymentsView() {
   const payments = useAppStore((s) => s.payments);
   const customers = useCustomerMap();
+  const invoiceIds = new Set(useInvoices().map((i) => i.id));
   const [q, setQ] = React.useState("");
   const [method, setMethod] = React.useState("all");
   const data = [...payments].filter((p) => method === "all" || p.method === method).sort((a, b) => b.date.localeCompare(a.date));
@@ -38,7 +39,27 @@ export function PaymentsView() {
     { id: "m", header: "Payment Method", accessorFn: (p) => p.method },
     { id: "ref", header: "Reference", accessorFn: (p) => p.reference, cell: ({ row }) => <div className="text-xs"><div>{row.original.reference}</div>{row.original.notes && <div className="text-muted-foreground">{row.original.notes}</div>}</div> },
     { id: "d", header: "Date", accessorFn: (p) => p.date, cell: ({ row }) => <span className="whitespace-nowrap">{fmtDateTime(row.original.date)}</span> },
-    { id: "inv", header: "Invoice", accessorFn: (p) => p.invoiceId, cell: ({ row }) => <Link href={`/accounts-receivable/${row.original.invoiceId}`} className="whitespace-nowrap text-primary hover:underline">{row.original.invoiceId}</Link> },
+    {
+      id: "inv",
+      header: "Invoice / job",
+      accessorFn: (p) => p.invoiceId,
+      cell: ({ row }) => (
+        <div className="text-xs whitespace-nowrap">
+          {invoiceIds.has(row.original.invoiceId) ? (
+            <Link href={`/accounts-receivable/${row.original.invoiceId}`} className="text-primary hover:underline">
+              {row.original.invoiceId}
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">Advance — not yet invoiced</span>
+          )}
+          <div>
+            <Link href={`/jobs/${row.original.jobId}`} className="text-muted-foreground hover:underline">
+              {row.original.jobId}
+            </Link>
+          </div>
+        </div>
+      ),
+    },
     { id: "by", header: "Recorded By", accessorFn: (p) => p.recordedBy, cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue() as string}</span> },
   ];
 
@@ -46,9 +67,9 @@ export function PaymentsView() {
     <>
       <PageHeader
         title="Payments"
-        description="Collections from COD, GCash, Maya, bank transfers and checks. References are masked — no full account numbers are stored."
+        description="Freight collections — driver COD, GCash, Maya, bank transfers and checks. Each payment settles a job's invoice. References are masked; no full account numbers are stored."
         actions={
-          <Button variant="outline" onClick={() => { downloadCsv("freshroute-payments.csv", [["Receipt", "Customer", "Amount", "Method", "Reference", "Date", "Invoice", "Recorded by"], ...data.map((p) => [p.receiptNo, customers.get(p.customerId)?.name ?? "", p.amount, p.method, p.reference, p.date, p.invoiceId, p.recordedBy])]); toast.success("Payments exported"); }}>
+          <Button variant="outline" onClick={() => { downloadCsv("tradeloop-payments.csv", [["Receipt", "Customer", "Amount", "Method", "Reference", "Date", "Invoice", "Job", "Recorded by"], ...data.map((p) => [p.receiptNo, customers.get(p.customerId)?.name ?? "", p.amount, p.method, p.reference, p.date, p.invoiceId, p.jobId, p.recordedBy])]); toast.success("Payments exported"); }}>
             <Download /> Export
           </Button>
         }
@@ -68,7 +89,7 @@ export function PaymentsView() {
             columns={columns}
             data={data}
             search={q}
-            searchText={(p) => `${p.receiptNo} ${p.id} ${customers.get(p.customerId)?.name} ${p.invoiceId} ${p.reference}`}
+            searchText={(p) => `${p.receiptNo} ${p.id} ${customers.get(p.customerId)?.name} ${p.invoiceId} ${p.jobId} ${p.reference}`}
             renderCard={(p) => (
               <div className="grid gap-1">
                 <div className="flex justify-between gap-2"><span className="font-medium">{customers.get(p.customerId)?.name}</span><span className="font-semibold tabular">{peso(p.amount)}</span></div>

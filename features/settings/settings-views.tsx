@@ -7,7 +7,8 @@ import { BellOff, CheckCheck, Clock, Construction, RotateCcw, Sparkles } from "l
 import type { NotificationKind } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { COMPANY, PLATFORM, STAFF, NOW } from "@/data/company";
-import { ROUTES, returnLegName } from "@/data/areas";
+import { AREAS, ROUTES, returnLegName } from "@/data/areas";
+import { BACKHAUL_RATE_PER_KG, MINIMUM_FREIGHT, RATE_CARD } from "@/data/cargo";
 import { TRUCKS } from "@/data/fleet";
 import { FUTURE_MODULES, ROLE_META } from "@/lib/nav";
 import { fmtDateTime, kg, peso } from "@/lib/format";
@@ -170,7 +171,26 @@ export function SettingsView() {
                   ))}
                 </TableBody>
               </Table>
-              <p className="border-t px-4 py-3 text-xs text-muted-foreground">Load weights include ice, styro boxes, banyera and sacks (seafood ×1.6–1.8, shellfish ×1.1, produce ×1.0).</p>
+              <p className="border-t px-4 py-3 text-xs text-muted-foreground">Cargo weights are gross — including ice, styro boxes, banyeras and sacks — and are checked against this payload on the Dispatch board.</p>
+            </Card>
+            <Card className="overflow-hidden">
+              <CardHeader>
+                <div>
+                  <CardTitle>Freight rate card (demo)</CardTitle>
+                  <CardDescription>
+                    Suggested ₱/kg for shared-van cargo from Lucena. Minimum charge {peso(MINIMUM_FREIGHT)}; 5% off from 2,000 kg; return-leg (backhaul) cargo {peso(BACKHAUL_RATE_PER_KG)}/kg. Sales can override per job.
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <div className="grid gap-x-6 px-4 pb-4 sm:grid-cols-2 lg:grid-cols-3">
+                {AREAS.filter((a) => RATE_CARD[a.id]).map((a) => (
+                  <div key={a.id} className="flex justify-between border-b py-1.5 text-sm">
+                    <span>{a.name}</span>
+                    <span className="tabular">₱{RATE_CARD[a.id]!.toFixed(2)}/kg</span>
+                  </div>
+                ))}
+              </div>
+              <p className="border-t px-4 py-3 text-xs text-muted-foreground">Illustrative demo rates — not published tariffs.</p>
             </Card>
           </div>
         </TabsContent>
@@ -178,11 +198,12 @@ export function SettingsView() {
           <Card>
             <CardContent className="grid gap-4 pt-5">
               {[
-                ["Orders awaiting confirmation", "Alert sales when a portal or Messenger order is pending for 15+ minutes"],
-                ["Late delivery risk", "Alert dispatch when an ETA passes the customer's receiving window"],
-                ["Overdue balances", "Daily 7:00 AM digest of overdue accounts to Accounting and the owner"],
-                ["Stock below confirmed demand", "Alert procurement when confirmed orders exceed stock + incoming"],
+                ["Jobs awaiting dispatch", "Alert dispatch when a confirmed job for today or tomorrow is not on a truck"],
+                ["Late delivery risk", "Alert dispatch when an ETA passes the consignee's required delivery time"],
+                ["Capacity exceeded", "Warn when a trip's outbound or return load exceeds the configured payload"],
+                ["Overdue balances", "Daily 7:00 AM digest of overdue freight to Accounting and the owner"],
                 ["Unused return capacity", "Suggest backhaul when a return leg is below 60% utilization"],
+                ["Maintenance & documents", "Alert 1,000 km before PMS and 30 days before a document expires"],
               ].map(([t, d]) => (
                 <label key={t} className="flex items-start justify-between gap-4">
                   <span>
@@ -210,7 +231,7 @@ export function SettingsView() {
               <div className="flex items-center gap-2">
                 <Sparkles className="size-4 text-muted-foreground" /> TradeLoop go-live: Aug 26, 2026 — balances before that date were migrated from the paper ledger.
               </div>
-              <p className="text-muted-foreground">Orders, payments, POs and leads you create are saved in this browser only. Prices are illustrative, not live market prices.</p>
+              <p className="text-muted-foreground">Jobs, trips, payments and fleet records you create are saved in this browser only. Freight rates and diesel prices are illustrative, not live prices.</p>
               <ConfirmDialog
                 trigger={
                   <Button variant="outline" className="justify-self-start">
@@ -218,7 +239,7 @@ export function SettingsView() {
                   </Button>
                 }
                 title="Reset all demo data?"
-                description="All orders, payments, POs and leads you created in this browser will be discarded."
+                description="All jobs, trips, deliveries, payments and fleet records you created in this browser will be discarded."
                 confirmLabel="Reset"
                 destructive
                 onConfirm={() => {
@@ -243,19 +264,19 @@ export function NotificationsCenter() {
   const kinds: { v: typeof kind; l: string }[] = [
     { v: "all", l: "All" },
     { v: "unread", l: "Unread" },
-    { v: "order", l: "Orders" },
+    { v: "job", l: "Jobs" },
     { v: "trip", l: "Trips" },
-    { v: "finance", l: "Finance" },
-    { v: "inventory", l: "Inventory" },
-    { v: "procurement", l: "Procurement" },
+    { v: "delivery", l: "Deliveries" },
     { v: "backhaul", l: "Backhaul" },
+    { v: "fleet", l: "Fleet" },
+    { v: "finance", l: "Finance" },
     { v: "lead", l: "Leads" },
   ];
   return (
     <>
       <PageHeader
         title="Notifications"
-        description="Alerts generated from today's orders, trips, stock and balances."
+        description="Alerts generated from today's jobs, trips, deliveries, fleet records and balances."
         actions={
           <Button variant="outline" onClick={markAll}>
             <CheckCheck /> Mark all as read

@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, FileText, Plus, Save, Sparkles, Trash2, Truck } from "lucide-react";
 import type { OrderSource, PaymentTerms } from "@/types";
 import { useAppStore, actorFor } from "@/lib/store";
-import { useCustomerMap, useCustomerStats, useStock } from "@/hooks/use-data";
+import { useCustomerMap, useSalesCustomerStats, useStock } from "@/hooks/use-data";
 import { PRODUCTS, productById, productLabel } from "@/data/products";
 import { areaName } from "@/data/areas";
 import { TODAY, TOMORROW } from "@/data/company";
@@ -51,7 +51,7 @@ export function OrderForm({ initialCustomerId }: { initialCustomerId?: string })
   const createOrder = useAppStore((s) => s.createOrder);
   const customersList = useAppStore((s) => s.customers);
   const customers = useCustomerMap();
-  const stats = useCustomerStats();
+  const stats = useSalesCustomerStats();
   const stock = useStock();
   const [submitting, setSubmitting] = React.useState<"draft" | "confirm" | null>(null);
 

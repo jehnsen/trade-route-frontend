@@ -7,11 +7,11 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { ArrowRight, MapPin, MessageCircle, Phone, Plus, UserCheck, Users, Megaphone, Target, FileQuestion } from "lucide-react";
-import type { Lead, LeadSource, LeadStage, CustomerType } from "@/types";
+import { ArrowRight, FileText, MapPin, MessageCircle, Phone, Plus, Route, UserCheck, Users, Megaphone, Target } from "lucide-react";
+import type { AreaId, Lead, LeadSource, LeadStage, CustomerType } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { STAFF, staffById } from "@/data/company";
-import { productById, PRODUCTS, productLabel } from "@/data/products";
+import { AREAS } from "@/data/areas";
 import { fmtDate, fmtDateShort, fmtDateTime, peso, pesoCompact, pct } from "@/lib/format";
 import { sumBy } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, Input, Textarea } from "@/components/ui/primitives";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/overlays";
 import { Field, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/form-controls";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { KPICard, PageHeader, Stat, Timeline } from "@/components/shared/common";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -27,11 +26,11 @@ import { CUSTOMER_TYPES } from "@/features/customers/customers-view";
 
 export const STAGES: LeadStage[] = ["New", "Contacted", "Quoted", "Sample Order", "Negotiating", "Won", "Lost"];
 export const LEAD_SOURCES: LeadSource[] = ["Facebook Marketplace", "Facebook Group", "Facebook Page", "Messenger", "Referral", "Walk-in", "Existing Customer Referral"];
-const DND = "application/x-freshroute-lead";
+const DND = "application/x-tradeloop-lead";
 
 export function LeadsView() {
   const leads = useAppStore((s) => s.leads);
-  const quotes = useAppStore((s) => s.quoteRequests);
+  const quotes = useAppStore((s) => s.quotes);
   const moveLead = useAppStore((s) => s.moveLead);
   const [selected, setSelected] = React.useState<string>();
   const [adding, setAdding] = React.useState(false);
@@ -46,8 +45,8 @@ export function LeadsView() {
   return (
     <>
       <PageHeader
-        title="Leads & Facebook"
-        description="Buyers from Facebook groups, Marketplace, Messenger and referrals — tracked from first message to first delivery."
+        title="Leads"
+        description="Shippers and consignees from Facebook groups, Marketplace, Messenger and referrals — tracked from first message to first booked trip."
         actions={
           <Button onClick={() => setAdding(true)}>
             <Plus /> Add lead
@@ -55,16 +54,15 @@ export function LeadsView() {
         }
       />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KPICard label="Open leads" value={open.length} icon={Target} hint={`${pesoCompact(sumBy(open, (l) => l.potentialWeeklyValue))}/week potential`} />
+        <KPICard label="Open leads" value={open.length} icon={Target} hint={`${pesoCompact(sumBy(open, (l) => l.potentialMonthlyValue))}/month freight potential`} />
         <KPICard label="From Facebook & Messenger" value={fb.length} icon={Megaphone} hint={`${pct(fb.length / Math.max(1, leads.length))} of all leads`} />
         <KPICard label="Conversion rate" value={pct(won / Math.max(1, won + lost))} icon={UserCheck} hint={`${won} won · ${lost} lost`} tone="success" />
-        <KPICard label="Quote requests" value={quotes.filter((q) => q.status === "Submitted" || q.status === "Under Review").length} icon={FileQuestion} hint="waiting for a price" />
+        <KPICard label="Quotes out to leads" value={quotes.filter((q) => q.leadId && q.status === "Sent").length} icon={FileText} hint="awaiting reply" href="/quotes" />
       </div>
       <Tabs defaultValue="pipeline">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <TabsList>
             <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
-            <TabsTrigger value="rfq">Quote requests ({quotes.length})</TabsTrigger>
           </TabsList>
           <Select value={source} onValueChange={setSource}>
             <SelectTrigger className="w-56" aria-label="Lead source">
@@ -101,7 +99,7 @@ export function LeadsView() {
                   <div className="flex items-center justify-between px-3 py-2.5">
                     <span className="text-sm font-semibold">{stage}</span>
                     <span className="text-xs text-muted-foreground tabular">
-                      {list.length} · {pesoCompact(sumBy(list, (l) => l.potentialWeeklyValue))}/wk
+                      {list.length} · {pesoCompact(sumBy(list, (l) => l.potentialMonthlyValue))}/mo
                     </span>
                   </div>
                   <div className="grid gap-2 px-2 pb-2">
@@ -118,8 +116,11 @@ export function LeadsView() {
                         <div className="flex items-center gap-1 text-xs text-muted-foreground">
                           <MapPin className="size-3" /> {l.location}
                         </div>
+                        <div className="flex items-center gap-1 text-xs">
+                          <Route className="size-3 text-primary" /> {l.lane}
+                        </div>
                         <div className="text-xs">
-                          <span className="text-muted-foreground">Interested:</span> {l.interestedProductIds.map((p) => productById(p).localName).filter((v, i, a) => a.indexOf(v) === i).join(" + ")}
+                          <span className="text-muted-foreground">Cargo:</span> {l.cargoInterest}
                         </div>
                         <div className="text-xs">
                           <span className="text-muted-foreground">Potential:</span> {l.potentialVolume}
@@ -138,52 +139,6 @@ export function LeadsView() {
               );
             })}
           </div>
-        </TabsContent>
-        <TabsContent value="rfq">
-          <Card className="overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>RFQ</TableHead>
-                  <TableHead>Business</TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Frequency</TableHead>
-                  <TableHead>Delivery area</TableHead>
-                  <TableHead>Preferred date</TableHead>
-                  <TableHead className="text-right">Quoted</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {quotes.map((q) => (
-                  <TableRow key={q.id}>
-                    <TableCell className="font-medium whitespace-nowrap">
-                      {q.id}
-                      <div className="text-xs font-normal text-muted-foreground">{fmtDateTime(q.createdAt)}</div>
-                    </TableCell>
-                    <TableCell>
-                      {q.customerId ? <Link href={`/customers/${q.customerId}`} className="font-medium hover:underline">{q.businessName}</Link> : <span className="font-medium">{q.businessName}</span>}
-                      <div className="text-xs text-muted-foreground">
-                        {q.contactName} · {q.businessType}
-                      </div>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{productLabel(productById(q.productId))}</TableCell>
-                    <TableCell className="whitespace-nowrap tabular">
-                      {q.quantity.toLocaleString()} {q.unit}
-                    </TableCell>
-                    <TableCell className="text-xs">{q.frequency}</TableCell>
-                    <TableCell className="text-xs">{q.deliveryArea}</TableCell>
-                    <TableCell className="whitespace-nowrap">{fmtDate(q.preferredDate)}</TableCell>
-                    <TableCell className="text-right tabular">{q.quotedPrice ? `${peso(q.quotedPrice)}/kg` : "—"}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={q.status} icon={false} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
         </TabsContent>
       </Tabs>
       <Sheet open={!!sel} onOpenChange={(v) => !v && setSelected(undefined)}>
@@ -216,14 +171,13 @@ function LeadDetail({ lead }: { lead: Lead }) {
         <Stat label="Business type" value={lead.businessType} />
         <Stat label="Owner" value={owner?.name ?? "—"} />
         <Stat label="Potential volume" value={lead.potentialVolume} />
-        <Stat label="Potential value" value={`${peso(lead.potentialWeeklyValue)}/week`} />
+        <Stat label="Potential freight" value={`${peso(lead.potentialMonthlyValue)}/month`} />
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {lead.interestedProductIds.map((p) => (
-          <Badge key={p} variant="teal">
-            {productLabel(productById(p))}
-          </Badge>
-        ))}
+        <Badge variant="teal">
+          <Route /> {lead.lane}
+        </Badge>
+        <Badge variant="outline">{lead.cargoInterest}</Badge>
       </div>
       {lead.nextStep && <div className="rounded-md bg-accent/60 p-3 text-sm"><b>Next step:</b> {lead.nextStep}</div>}
       {lead.lostReason && <div className="rounded-md bg-danger-soft p-3 text-sm"><b>Lost:</b> {lead.lostReason}</div>}
@@ -251,6 +205,13 @@ function LeadDetail({ lead }: { lead: Lead }) {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        {!lead.convertedCustomerId && lead.stage !== "Lost" && (
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/quotes?lead=${lead.id}`}>
+              <FileText /> Create quote
+            </Link>
+          </Button>
+        )}
         {lead.convertedCustomerId ? (
           <Button size="sm" asChild>
             <Link href={`/customers/${lead.convertedCustomerId}`}>
@@ -266,11 +227,11 @@ function LeadDetail({ lead }: { lead: Lead }) {
                 </Button>
               }
               title={`Convert ${lead.businessName} to a customer?`}
-              description="A customer account will be created (COD terms to start), the lead will be marked Won, and you can encode their first order right away."
+              description="A customer account will be created (COD terms to start), the lead will be marked Won, and you can book their first job right away."
               confirmLabel="Convert"
               onConfirm={() => {
                 const id = convert(lead.id);
-                toast.success(`${lead.businessName} is now customer ${id}`, { action: { label: "New order", onClick: () => router.push(`/orders/new?customer=${id}`) } });
+                toast.success(`${lead.businessName} is now customer ${id}`, { action: { label: "New job", onClick: () => router.push(`/jobs/new?customer=${id}`) } });
                 router.push(`/customers/${id}`);
               }}
             />
@@ -314,19 +275,21 @@ const schema = z.object({
   source: z.enum(LEAD_SOURCES as [LeadSource, ...LeadSource[]]),
   location: z.string().min(3, "Where is the business?"),
   businessType: z.enum(CUSTOMER_TYPES as [CustomerType, ...CustomerType[]]),
-  productId: z.string().min(1, "Pick a product"),
-  potentialVolume: z.string().min(2, "e.g. 150 kg/week"),
-  potentialWeeklyValue: z.number({ message: "Estimate in pesos" }).min(0),
+  areaId: z.string(),
+  cargoInterest: z.string().trim().min(3, "What do they need hauled?"),
+  lane: z.string().trim().min(3, "e.g. Lucena → Imus"),
+  potentialVolume: z.string().min(2, "e.g. 600 kg × 2 trips/week"),
+  potentialMonthlyValue: z.number({ message: "Estimate in pesos" }).min(0),
   ownerId: z.string(),
 });
 type Values = z.infer<typeof schema>;
 
 function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const add = useAppStore((s) => s.addLead);
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { businessName: "", contactName: "", phone: "", source: "Facebook Group", location: "", businessType: "Palengke Vendor", productId: "P-SUG-L", potentialVolume: "", potentialWeeklyValue: 0, ownerId: "ST-02" } });
+  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { businessName: "", contactName: "", phone: "", source: "Facebook Group", location: "", businessType: "Seafood Dealer", areaId: "none", cargoInterest: "", lane: "", potentialVolume: "", potentialMonthlyValue: 0, ownerId: "ST-02" } });
   const e = form.formState.errors;
   const submit = form.handleSubmit((v) => {
-    add({ businessName: v.businessName, contactName: v.contactName, phone: v.phone, source: v.source, location: v.location, businessType: v.businessType, interestedProductIds: [v.productId], potentialVolume: v.potentialVolume, potentialWeeklyValue: v.potentialWeeklyValue, stage: "New", ownerId: v.ownerId });
+    add({ businessName: v.businessName, contactName: v.contactName, phone: v.phone, source: v.source, location: v.location, areaId: v.areaId === "none" ? undefined : (v.areaId as AreaId), businessType: v.businessType, cargoInterest: v.cargoInterest, lane: v.lane, potentialVolume: v.potentialVolume, potentialMonthlyValue: v.potentialMonthlyValue, stage: "New", ownerId: v.ownerId });
     toast.success(`${v.businessName} added to the pipeline`);
     form.reset();
     onOpenChange(false);
@@ -336,7 +299,7 @@ function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add lead</DialogTitle>
-          <DialogDescription>Capture buyers who commented in a Facebook group, messaged the page, or were referred.</DialogDescription>
+          <DialogDescription>Capture shippers who commented in a Facebook group, messaged the page, or were referred.</DialogDescription>
         </DialogHeader>
         <form noValidate onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
           <Field label="Business name" htmlFor="l-bn" error={e.businessName?.message} required>
@@ -367,19 +330,28 @@ function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
               </Select>
             )} />
           </Field>
-          <Field label="Interested in" htmlFor="l-prod">
-            <Controller control={form.control} name="productId" render={({ field }) => (
+          <Field label="Area (for routing)" htmlFor="l-area">
+            <Controller control={form.control} name="areaId" render={({ field }) => (
               <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger id="l-prod"><SelectValue /></SelectTrigger>
-                <SelectContent>{PRODUCTS.map((p) => <SelectItem key={p.id} value={p.id}>{productLabel(p)}</SelectItem>)}</SelectContent>
+                <SelectTrigger id="l-area"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not on our lanes yet</SelectItem>
+                  {AREAS.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                </SelectContent>
               </Select>
             )} />
           </Field>
-          <Field label="Potential volume" htmlFor="l-vol" error={e.potentialVolume?.message} required>
-            <Input id="l-vol" placeholder="e.g. 150 kg/week" aria-invalid={!!e.potentialVolume} {...form.register("potentialVolume")} />
+          <Field label="Cargo to haul" htmlFor="l-cargo" error={e.cargoInterest?.message} required>
+            <Input id="l-cargo" placeholder="e.g. Sugpo, iced (styro boxes)" aria-invalid={!!e.cargoInterest} {...form.register("cargoInterest")} />
           </Field>
-          <Field label="Potential value (₱/week)" htmlFor="l-val" error={e.potentialWeeklyValue?.message}>
-            <Input id="l-val" type="number" {...form.register("potentialWeeklyValue", { valueAsNumber: true })} />
+          <Field label="Lane" htmlFor="l-lane" error={e.lane?.message} required>
+            <Input id="l-lane" placeholder="e.g. Lucena → Imus" aria-invalid={!!e.lane} {...form.register("lane")} />
+          </Field>
+          <Field label="Potential volume" htmlFor="l-vol" error={e.potentialVolume?.message} required>
+            <Input id="l-vol" placeholder="e.g. 600 kg × 2 trips/week" aria-invalid={!!e.potentialVolume} {...form.register("potentialVolume")} />
+          </Field>
+          <Field label="Potential freight (₱/month)" htmlFor="l-val" error={e.potentialMonthlyValue?.message}>
+            <Input id="l-val" type="number" {...form.register("potentialMonthlyValue", { valueAsNumber: true })} />
           </Field>
           <Field label="Assigned to" htmlFor="l-own">
             <Controller control={form.control} name="ownerId" render={({ field }) => (

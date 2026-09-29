@@ -1,5 +1,10 @@
 // TradeLoop domain types. Dates are stored as local ISO strings:
 // "YYYY-MM-DD" for dates and "YYYY-MM-DDTHH:mm" for date-times.
+//
+// Phase 1 is a logistics operations system: Quote → Job → Load → Trip → Delivery → POD →
+// Invoice → Payment, plus fleet records. The product-trading types (Order, PurchaseOrder,
+// InventoryBatch, SalesInvoice…) back the secondary "Trading" module and are independent
+// of trips and cargo.
 
 export type ISODate = string;
 export type ISODateTime = string;
@@ -67,41 +72,11 @@ export interface Address {
   landmark?: string;
 }
 
-// ─── Products ───────────────────────────────────────────────────────────────
-export type ProductCategory = "seafood" | "produce";
-export type ProductUnit = "kg" | "pc";
-export type ProductStatus = "active" | "low-stock" | "seasonal" | "inactive";
-/** Outbound = sourced in Quezon and hauled to Manila. Backhaul = bought in Manila/CALABARZON on the return leg. */
-export type ProductFlow = "outbound" | "backhaul";
-
-export interface Product {
-  id: string;
-  sku: string;
-  slug: string;
+/** A pickup, drop-off or stop location. */
+export interface Place {
   name: string;
-  localName?: string;
-  variant?: string;
-  category: ProductCategory;
-  subcategory: string;
-  unit: ProductUnit;
-  /** Weight per unit in kg (1 for kg-based items). */
-  unitWeightKg: number;
-  /** Multiplier for truck load weight: ice, styro boxes, banyera, sacks. */
-  loadFactor: number;
-  cost: number;
-  wholesalePrice: number;
-  sellingPrice: number;
-  moq: number;
-  bulkThreshold: number;
-  origin: string;
-  flow: ProductFlow;
-  grade: string;
-  description: string;
-  packaging: string[];
-  storage: string;
-  shelfLifeDays: number;
-  status: ProductStatus;
-  icon: "shrimp" | "shell" | "fish" | "crab" | "squid" | "onion" | "garlic" | "ginger" | "tomato" | "potato" | "carrot" | "cabbage" | "citrus" | "coconut" | "banana" | "chili" | "sweet-potato";
+  areaId: AreaId;
+  address?: string;
 }
 
 // ─── People ─────────────────────────────────────────────────────────────────
@@ -124,7 +99,10 @@ export type CustomerType =
   | "Distributor"
   | "Retailer"
   | "Grocery"
-  | "Catering Company";
+  | "Catering Company"
+  | "Agri Trader"
+  | "Cooperative"
+  | "General Merchandise";
 
 export type PaymentTerms = "COD" | "Credit 7 Days" | "Credit 15 Days" | "Credit 30 Days" | "50% Down, Balance on Arrival";
 export type CustomerStatus = "active" | "new" | "on-hold" | "inactive";
@@ -166,16 +144,511 @@ export interface Customer {
   salespersonId: string;
   leadSource: LeadSource;
   customerSince: ISODate;
+  /** Trading module: products usually bought. Logistics customers leave this empty. */
   preferredProductIds: string[];
   fulfillment: Fulfillment;
   status: CustomerStatus;
   notes: string;
   deliveryFee: number;
-  /** Used by the demo data generator to shape payment history. */
+  /** Used by the demo data generators to shape payment history. */
   paymentBehavior: PaymentBehavior;
-  /** Relative ordering frequency weight for the generator (1–10). */
+  /** Relative booking frequency weight for the generators (1–10). */
   frequency: number;
   tin?: string;
+}
+
+// ─── Fleet ──────────────────────────────────────────────────────────────────
+export type TruckStatus = "Available" | "Assigned" | "Loading" | "On Trip" | "Maintenance" | "Out of Service";
+
+export interface Truck {
+  id: string;
+  code: string;
+  name: string;
+  make: string;
+  model: string;
+  vehicleType: string;
+  body: string;
+  plateNo: string;
+  year: number;
+  /** Configured operational payload used for load planning (not a manufacturer rating). */
+  capacityKg: number;
+  cargoVolumeCbm: number;
+  /** Last recorded odometer reading (trip start/end or fuel log). */
+  mileageKm: number;
+  /** Planning figure used to estimate diesel before a fill-up is logged. */
+  fuelEfficiencyKmPerL: number;
+  primaryDriverId: string;
+  /** Set when the owner parks the truck (major repair, franchise issue). */
+  outOfService?: boolean;
+  color: string;
+}
+
+export interface DriverUnavailability {
+  from: ISODate;
+  to: ISODate;
+  reason: string;
+}
+
+export interface Driver {
+  id: string;
+  name: string;
+  initials: string;
+  phone: string;
+  /** Fictional, masked license number. */
+  licenseNo: string;
+  licenseExpiry: ISODate;
+  licenseRestrictions: string;
+  assignedTruckId: string;
+  hiredDate: ISODate;
+  address: string;
+  emergencyContact: string;
+  unavailable: DriverUnavailability[];
+}
+
+export interface Helper {
+  id: string;
+  name: string;
+  phone: string;
+}
+
+export type MaintenanceType =
+  | "Preventive Maintenance"
+  | "Oil Change"
+  | "Tire Replacement"
+  | "Brake Service"
+  | "Engine Repair"
+  | "Electrical"
+  | "Aircon"
+  | "Body Repair"
+  | "Other";
+export type MaintenanceStatus = "Scheduled" | "In Progress" | "Completed" | "Cancelled";
+
+export interface MaintenanceRecord {
+  id: string;
+  truckId: string;
+  type: MaintenanceType;
+  /** Odometer at service (or planned odometer for scheduled work). */
+  odometerKm: number;
+  date: ISODate;
+  vendor: string;
+  cost: number;
+  notes: string;
+  nextServiceDate?: ISODate;
+  nextServiceKm?: number;
+  status: MaintenanceStatus;
+  downtimeHours?: number;
+}
+
+export interface FuelLog {
+  id: string;
+  truckId: string;
+  tripId?: string;
+  driverId: string;
+  date: ISODateTime;
+  odometerKm: number;
+  liters: number;
+  pricePerLiter: number;
+  totalCost: number;
+  station: string;
+  areaId: AreaId;
+  /** Full-tank fill-ups allow a full-to-full fuel efficiency calculation. */
+  fullTank: boolean;
+  receiptRef?: string;
+}
+
+export type VehicleDocumentType =
+  | "OR/CR"
+  | "LTO Registration"
+  | "Comprehensive Insurance"
+  | "CTPL Insurance"
+  | "Emission Test"
+  | "LTFRB Franchise (CPC)"
+  | "Fish Port Gate Pass"
+  | "Driver's License"
+  | "NBI Clearance"
+  | "Drug Test";
+
+export interface VehicleDocument {
+  id: string;
+  type: VehicleDocumentType;
+  truckId?: string;
+  driverId?: string;
+  /** Fictional reference, masked where it would be sensitive. */
+  reference: string;
+  issuer: string;
+  issueDate: ISODate;
+  expiryDate: ISODate;
+  attachment?: string;
+  notes?: string;
+}
+
+// ─── Sales & CRM ────────────────────────────────────────────────────────────
+export type LeadStage = "New" | "Contacted" | "Quoted" | "Sample Order" | "Negotiating" | "Won" | "Lost";
+
+export interface LeadActivity {
+  at: ISODateTime;
+  note: string;
+  by: string;
+}
+
+export interface Lead {
+  id: string;
+  businessName: string;
+  contactName: string;
+  phone: string;
+  source: LeadSource;
+  location: string;
+  areaId?: AreaId;
+  businessType: CustomerType;
+  /** What they need hauled, e.g. "Sugpo & tahong, iced". */
+  cargoInterest: string;
+  /** Typical lane, e.g. "Lucena → Imus". */
+  lane: string;
+  potentialVolume: string;
+  /** Estimated monthly freight revenue. */
+  potentialMonthlyValue: number;
+  stage: LeadStage;
+  ownerId: string;
+  createdAt: ISODate;
+  lastContactAt: ISODate;
+  nextStep?: string;
+  lostReason?: string;
+  convertedCustomerId?: string;
+  activities: LeadActivity[];
+}
+
+export type CargoCategory = "Seafood" | "Shellfish" | "Produce" | "Dry Goods" | "General Cargo";
+export type TruckRequirement = "Shared van (LTL)" | "Full truck — 10-wheeler" | "Insulated van, iced cargo";
+
+export interface Charge {
+  label: string;
+  amount: number;
+}
+
+export type QuoteStatus = "Draft" | "Sent" | "Accepted" | "Rejected" | "Expired";
+
+export interface FreightQuote {
+  id: string;
+  customerId?: string;
+  leadId?: string;
+  pickup: Place;
+  dropoff: Place;
+  cargoDescription: string;
+  cargoCategory: CargoCategory;
+  weightKg: number;
+  volumeCbm?: number;
+  truckRequirement: TruckRequirement;
+  pickupDate: ISODate;
+  requiredDate: ISODate;
+  freightCharge: number;
+  additionalCharges: Charge[];
+  notes?: string;
+  validUntil: ISODate;
+  status: QuoteStatus;
+  createdAt: ISODateTime;
+  createdBy: string;
+  sentAt?: ISODateTime;
+  respondedAt?: ISODateTime;
+  rejectReason?: string;
+  jobId?: string;
+}
+
+// ─── Logistics jobs & cargo ─────────────────────────────────────────────────
+export type JobStatus =
+  | "Inquiry"
+  | "Quoted"
+  | "Confirmed"
+  | "Awaiting Dispatch"
+  | "Assigned"
+  | "In Transit"
+  | "Delivered"
+  | "Completed"
+  | "Cancelled";
+
+export type JobSource = "Phone" | "Messenger" | "Facebook" | "Sales Staff" | "Repeat Customer" | "Referral" | "Customer Portal";
+
+/** Outbound = leaves Lucena; Return = hauled on a return (backhaul) leg toward Quezon. */
+export type Leg = "outbound" | "return";
+
+export interface JobEvent {
+  at: ISODateTime;
+  label: string;
+  by: string;
+  note?: string;
+}
+
+export interface LogisticsJob {
+  id: string;
+  customerId: string;
+  source: JobSource;
+  quoteId?: string;
+  leg: Leg;
+  pickup: Place;
+  dropoff: Place;
+  /** Receiving contact at drop-off (may differ from the booking customer). */
+  consignee: { name: string; phone: string };
+  cargoDescription: string;
+  cargoCategory: CargoCategory;
+  weightKg: number;
+  volumeCbm?: number;
+  truckRequirement: TruckRequirement;
+  pickupAt: ISODateTime;
+  requiredBy: ISODateTime;
+  freightCharge: number;
+  additionalCharges: Charge[];
+  paymentTerms: PaymentTerms;
+  status: JobStatus;
+  tripId?: string;
+  salespersonId: string;
+  instructions?: string;
+  notes?: string;
+  createdAt: ISODateTime;
+  /** When the consignee received the cargo (POD). Drives invoice issue date. */
+  deliveredAt?: ISODateTime;
+  history: JobEvent[];
+  cancelReason?: string;
+}
+
+export type LoadType = "Outbound" | "Backhaul" | "Third-Party" | "Company-Owned";
+export type LoadStatus = "Pending" | "Assigned" | "Loaded" | "In Transit" | "Delivered" | "Cancelled";
+
+export interface Load {
+  id: string;
+  jobId?: string;
+  /** Booking customer; empty for company-owned cargo. */
+  customerId?: string;
+  type: LoadType;
+  leg: Leg;
+  cargoDescription: string;
+  cargoCategory: CargoCategory;
+  quantity: number;
+  unit: string;
+  weightKg: number;
+  pickup: Place;
+  destination: Place;
+  tripId?: string;
+  status: LoadStatus;
+  handlingNotes?: string;
+  /** Company-owned cargo only: purchase value, for backhaul value reporting (not freight revenue). */
+  estimatedValue?: number;
+  createdAt: ISODateTime;
+}
+
+// ─── Trips ──────────────────────────────────────────────────────────────────
+export type TripStatus = "Planned" | "Loading" | "Ready" | "Dispatched" | "In Transit" | "Returning" | "Completed" | "Cancelled";
+
+export interface RouteTemplate {
+  id: string;
+  name: string;
+  outboundAreas: AreaId[];
+  returnAreas: AreaId[];
+  roundTripKm: number;
+  tollFee: number;
+  departure: string;
+  expectedReturn: string;
+}
+
+export type StopType = "Pickup" | "Delivery" | "Backhaul Pickup" | "Fuel" | "Port" | "Warehouse" | "Other";
+export type StopStatus = "Pending" | "Arrived" | "Completed" | "Skipped";
+
+export interface TripStop {
+  id: string;
+  seq: number;
+  type: StopType;
+  location: Place;
+  customerId?: string;
+  contactName?: string;
+  contactPhone?: string;
+  plannedArrival: ISODateTime;
+  actualArrival?: ISODateTime;
+  plannedDeparture: ISODateTime;
+  actualDeparture?: ISODateTime;
+  loaded: string[];
+  unloaded: string[];
+  status: StopStatus;
+  notes?: string;
+}
+
+export interface TripEvent {
+  at: ISODateTime;
+  label: string;
+  by: string;
+  note?: string;
+}
+
+export interface Trip {
+  id: string;
+  date: ISODate;
+  truckId: string;
+  driverId: string;
+  helperIds: string[];
+  routeId: string;
+  status: TripStatus;
+  departure: ISODateTime;
+  actualDeparture?: ISODateTime;
+  expectedReturn: ISODateTime;
+  actualReturn?: ISODateTime;
+  odometerStart?: number;
+  odometerEnd?: number;
+  stops: TripStop[];
+  notes?: string;
+  history: TripEvent[];
+}
+
+// ─── Deliveries ─────────────────────────────────────────────────────────────
+export type DeliveryStatus = "Scheduled" | "Loading" | "Ready" | "In Transit" | "Arrived" | "Delivered" | "Failed" | "Returned";
+
+export interface ProofOfDelivery {
+  receivedBy: string;
+  signedAt: ISODateTime;
+  /** Delivery receipt number written on the DR. */
+  receiptNo: string;
+  signatureCaptured: boolean;
+  photoCount: number;
+  driverNotes?: string;
+  customerRemarks?: string;
+  shortKg?: number;
+  damagedKg?: number;
+}
+
+export type DeliveryIssueType = "Damaged Cargo" | "Short Quantity" | "Late Arrival" | "Consignee Unavailable" | "Rejected by Consignee" | "Road / Access Problem" | "Vehicle Problem" | "Other";
+
+export interface DeliveryIssue {
+  type: DeliveryIssueType;
+  note: string;
+  reportedAt: ISODateTime;
+  reportedBy: string;
+}
+
+export interface Delivery {
+  id: string;
+  jobId: string;
+  tripId: string;
+  customerId: string;
+  loadIds: string[];
+  status: DeliveryStatus;
+  eta: ISODateTime;
+  arrivedAt?: ISODateTime;
+  completedAt?: ISODateTime;
+  pod?: ProofOfDelivery;
+  issues: DeliveryIssue[];
+  failureReason?: string;
+}
+
+// ─── Finance (freight billing) ──────────────────────────────────────────────
+export type PaymentMethod = "Cash" | "Bank Transfer" | "GCash" | "Maya" | "Check" | "COD";
+
+export interface Payment {
+  id: string;
+  receiptNo: string;
+  customerId: string;
+  invoiceId: string;
+  jobId: string;
+  amount: number;
+  method: PaymentMethod;
+  reference: string;
+  date: ISODateTime;
+  recordedBy: string;
+  notes?: string;
+}
+
+/** Freight billing — one invoice per delivered job. Derived from jobs + payments. */
+export interface Invoice {
+  id: string;
+  jobId: string;
+  customerId: string;
+  tripId?: string;
+  issueDate: ISODate;
+  dueDate: ISODate;
+  total: number;
+  paid: number;
+  balance: number;
+  daysOverdue: number;
+  status: "Paid" | "Current" | "Overdue" | "Partial";
+}
+
+export type PaymentStatus = "Unpaid" | "Partial" | "Paid" | "Credit";
+
+export type ExpenseCategory =
+  | "Diesel"
+  | "Toll"
+  | "Driver Allowance"
+  | "Helper Allowance"
+  | "Meals"
+  | "Parking"
+  | "Loading Fee"
+  | "Unloading Fee"
+  | "Port Fee"
+  | "Repair"
+  | "Other";
+
+export interface Expense {
+  id: string;
+  date: ISODate;
+  category: ExpenseCategory;
+  amount: number;
+  description: string;
+  tripId?: string;
+  truckId?: string;
+  driverId?: string;
+  fuelLogId?: string;
+  paidTo: string;
+  recordedBy: string;
+  receiptRef?: string;
+}
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+export type NotificationKind = "job" | "trip" | "delivery" | "finance" | "fleet" | "backhaul" | "lead" | "order";
+
+export interface AppNotification {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  at: ISODateTime;
+  href: string;
+  severity: "info" | "success" | "warning" | "critical";
+  read: boolean;
+  roles: Role[];
+}
+
+// ═══ Trading module (Phase 2 preview) ════════════════════════════════════════
+// Product sales, procurement and stock. Independent of trips and cargo.
+
+export type ProductCategory = "seafood" | "produce";
+export type ProductUnit = "kg" | "pc";
+export type ProductStatus = "active" | "low-stock" | "seasonal" | "inactive";
+/** Outbound = sourced in Quezon and sold in Manila. Backhaul = bought in Manila/CALABARZON. */
+export type ProductFlow = "outbound" | "backhaul";
+
+export interface Product {
+  id: string;
+  sku: string;
+  slug: string;
+  name: string;
+  localName?: string;
+  variant?: string;
+  category: ProductCategory;
+  subcategory: string;
+  unit: ProductUnit;
+  /** Weight per unit in kg (1 for kg-based items). */
+  unitWeightKg: number;
+  /** Multiplier for gross weight: ice, styro boxes, banyera, sacks. */
+  loadFactor: number;
+  cost: number;
+  wholesalePrice: number;
+  sellingPrice: number;
+  moq: number;
+  bulkThreshold: number;
+  origin: string;
+  flow: ProductFlow;
+  grade: string;
+  description: string;
+  packaging: string[];
+  storage: string;
+  shelfLifeDays: number;
+  status: ProductStatus;
+  icon: "shrimp" | "shell" | "fish" | "crab" | "squid" | "onion" | "garlic" | "ginger" | "tomato" | "potato" | "carrot" | "cabbage" | "citrus" | "coconut" | "banana" | "chili" | "sweet-potato";
 }
 
 export interface StandingOrderLine {
@@ -195,7 +668,6 @@ export interface StandingOrder {
   notes?: string;
 }
 
-// ─── Suppliers ──────────────────────────────────────────────────────────────
 export type SupplierType = "Seafood Source" | "Farm Supplier" | "Agricultural Trader" | "Wholesale Market" | "Distributor";
 
 export interface Supplier {
@@ -203,7 +675,7 @@ export interface Supplier {
   name: string;
   type: SupplierType;
   address: Address;
-  /** Where our trucks pick up (may differ from office address). */
+  /** Where goods are collected (may differ from office address). */
   pickupLocation: string;
   pickupAreaId: AreaId;
   contactPerson: string;
@@ -228,64 +700,6 @@ export interface SupplierQuote {
   validUntil: ISODate;
 }
 
-// ─── Fleet ──────────────────────────────────────────────────────────────────
-export type TruckStatus = "Available" | "Loading" | "On Trip" | "Maintenance";
-
-export interface MaintenanceRecord {
-  id: string;
-  truckId: string;
-  date: ISODate;
-  type: "Preventive Maintenance" | "Repair" | "Tires" | "Registration" | "Inspection";
-  description: string;
-  shop: string;
-  cost: number;
-  odometerKm: number;
-  downtimeHours: number;
-}
-
-export interface Truck {
-  id: string;
-  code: string;
-  name: string;
-  make: string;
-  model: string;
-  body: string;
-  plateNo: string;
-  year: number;
-  capacityKg: number;
-  cargoVolumeCbm: number;
-  mileageKm: number;
-  fuelEfficiencyKmPerL: number;
-  primaryDriverId: string;
-  nextMaintenanceKm: number;
-  nextMaintenanceDate: ISODate;
-  registrationExpiry: ISODate;
-  insuranceExpiry: ISODate;
-  color: string;
-}
-
-export interface Driver {
-  id: string;
-  name: string;
-  initials: string;
-  phone: string;
-  licenseNo: string;
-  licenseExpiry: ISODate;
-  licenseRestrictions: string;
-  assignedTruckId: string;
-  hiredDate: ISODate;
-  address: string;
-  emergencyContact: string;
-  status: "On Trip" | "Available" | "Rest Day" | "On Leave";
-}
-
-export interface Helper {
-  id: string;
-  name: string;
-  phone: string;
-}
-
-// ─── Orders ─────────────────────────────────────────────────────────────────
 export type OrderSource =
   | "Customer Portal"
   | "Facebook Messenger"
@@ -305,8 +719,6 @@ export type OrderStatus =
   | "Partially Delivered"
   | "Cancelled";
 
-export type PaymentStatus = "Unpaid" | "Partial" | "Paid" | "Credit";
-
 export interface OrderItem {
   productId: string;
   quantity: number;
@@ -322,6 +734,7 @@ export interface OrderEvent {
   note?: string;
 }
 
+/** Trading sales order (product sale). Fulfilment runs through a logistics job in the live system. */
 export interface Order {
   id: string;
   customerId: string;
@@ -337,7 +750,6 @@ export interface Order {
   /** Customer's requested receiving window, e.g. "Before 8:00 AM". */
   deliveryWindow?: string;
   fulfillment: Fulfillment;
-  tripId?: string;
   salespersonId: string;
   notes?: string;
   history: OrderEvent[];
@@ -346,73 +758,6 @@ export interface Order {
   deliveredAt?: ISODateTime;
 }
 
-// ─── Deliveries ─────────────────────────────────────────────────────────────
-export type DeliveryStatus = "Scheduled" | "Loading" | "Ready" | "In Transit" | "Arrived" | "Delivered" | "Failed" | "Returned";
-
-export interface ProofOfDelivery {
-  receivedBy: string;
-  signedAt: ISODateTime;
-  photoCount: number;
-  remarks?: string;
-}
-
-export interface Delivery {
-  id: string;
-  orderId: string;
-  tripId: string;
-  stopSeq: number;
-  status: DeliveryStatus;
-  eta: ISODateTime;
-  arrivedAt?: ISODateTime;
-  completedAt?: ISODateTime;
-  pod?: ProofOfDelivery;
-  failureReason?: string;
-}
-
-// ─── Trips ──────────────────────────────────────────────────────────────────
-export type TripStatus = "Planned" | "Loading" | "In Transit" | "Returning" | "Completed" | "Cancelled";
-
-export interface RouteTemplate {
-  id: string;
-  name: string;
-  outboundAreas: AreaId[];
-  returnAreas: AreaId[];
-  roundTripKm: number;
-  tollFee: number;
-  departure: string;
-  expectedReturn: string;
-}
-
-export interface TripStop {
-  seq: number;
-  type: "depart" | "delivery" | "pickup" | "arrive";
-  areaId: AreaId;
-  label: string;
-  orderId?: string;
-  poId?: string;
-  eta: ISODateTime;
-  actual?: ISODateTime;
-  status: "done" | "current" | "pending" | "skipped";
-}
-
-export interface Trip {
-  id: string;
-  date: ISODate;
-  truckId: string;
-  driverId: string;
-  helperIds: string[];
-  routeId: string;
-  status: TripStatus;
-  departure: ISODateTime;
-  actualDeparture?: ISODateTime;
-  expectedReturn: ISODateTime;
-  actualReturn?: ISODateTime;
-  odometerStart?: number;
-  odometerEnd?: number;
-  notes?: string;
-}
-
-// ─── Procurement ────────────────────────────────────────────────────────────
 export type POStatus =
   | "Draft"
   | "Sent"
@@ -439,8 +784,6 @@ export interface PurchaseOrder {
   pickupDate: ISODate;
   pickupLocation: string;
   pickupAreaId: AreaId;
-  /** Return trip that hauls this PO back to Lucena. Undefined for supplier-delivered POs. */
-  tripId?: string;
   deliveredBySupplier?: boolean;
   pickupEta?: ISODateTime;
   pickedUpAt?: ISODateTime;
@@ -449,7 +792,6 @@ export interface PurchaseOrder {
   notes?: string;
 }
 
-// ─── Inventory ──────────────────────────────────────────────────────────────
 export type InventoryLocation =
   | "Lucena Main Warehouse"
   | "Truck 01"
@@ -471,24 +813,23 @@ export interface InventoryBatch {
   note?: string;
 }
 
-// ─── Finance ────────────────────────────────────────────────────────────────
-export type PaymentMethod = "Cash" | "GCash" | "Maya" | "Bank Transfer" | "Check" | "COD" | "Credit Settlement";
+export type SalesPaymentMethod = "Cash" | "GCash" | "Maya" | "Bank Transfer" | "Check" | "COD" | "Credit Settlement";
 
-export interface Payment {
+export interface SalesPayment {
   id: string;
   receiptNo: string;
   customerId: string;
   invoiceId: string;
   orderId: string;
   amount: number;
-  method: PaymentMethod;
+  method: SalesPaymentMethod;
   reference: string;
   date: ISODateTime;
   recordedBy: string;
   notes?: string;
 }
 
-export interface Invoice {
+export interface SalesInvoice {
   id: string;
   orderId: string;
   customerId: string;
@@ -499,67 +840,6 @@ export interface Invoice {
   balance: number;
   daysOverdue: number;
   status: "Paid" | "Current" | "Overdue" | "Partial";
-}
-
-export type ExpenseCategory =
-  | "Diesel"
-  | "Toll"
-  | "Driver Allowance"
-  | "Helper Allowance"
-  | "Meals"
-  | "Parking"
-  | "Loading Fee"
-  | "Unloading Fee"
-  | "Ice"
-  | "Packaging"
-  | "Maintenance"
-  | "Repairs"
-  | "Port / Shipping Fee"
-  | "Miscellaneous";
-
-export interface Expense {
-  id: string;
-  date: ISODate;
-  category: ExpenseCategory;
-  amount: number;
-  description: string;
-  tripId?: string;
-  truckId?: string;
-  orderId?: string;
-  paidTo: string;
-  recordedBy: string;
-  receiptRef?: string;
-}
-
-// ─── CRM ────────────────────────────────────────────────────────────────────
-export type LeadStage = "New" | "Contacted" | "Quoted" | "Sample Order" | "Negotiating" | "Won" | "Lost";
-
-export interface LeadActivity {
-  at: ISODateTime;
-  note: string;
-  by: string;
-}
-
-export interface Lead {
-  id: string;
-  businessName: string;
-  contactName: string;
-  phone: string;
-  source: LeadSource;
-  location: string;
-  areaId?: AreaId;
-  businessType: CustomerType;
-  interestedProductIds: string[];
-  potentialVolume: string;
-  potentialWeeklyValue: number;
-  stage: LeadStage;
-  ownerId: string;
-  createdAt: ISODate;
-  lastContactAt: ISODate;
-  nextStep?: string;
-  lostReason?: string;
-  convertedCustomerId?: string;
-  activities: LeadActivity[];
 }
 
 export interface QuoteRequest {
@@ -581,22 +861,6 @@ export interface QuoteRequest {
   customerId?: string;
 }
 
-// ─── Notifications ──────────────────────────────────────────────────────────
-export type NotificationKind = "order" | "trip" | "finance" | "inventory" | "backhaul" | "procurement" | "lead";
-
-export interface AppNotification {
-  id: string;
-  kind: NotificationKind;
-  title: string;
-  body: string;
-  at: ISODateTime;
-  href: string;
-  severity: "info" | "success" | "warning" | "critical";
-  read: boolean;
-  roles: Role[];
-}
-
-// ─── Portal ─────────────────────────────────────────────────────────────────
 export interface CartLine {
   productId: string;
   quantity: number;

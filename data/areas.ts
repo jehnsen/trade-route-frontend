@@ -1,4 +1,4 @@
-import type { Area, AreaId, RouteTemplate } from "@/types";
+import type { Area, AreaId, Place, RouteTemplate } from "@/types";
 
 export const AREAS: Area[] = [
   { id: "lucena", name: "Lucena City", province: "Quezon", region: "Quezon Province", distanceKm: 0, driveMinutes: 0 },
@@ -33,6 +33,29 @@ const areaMap = new Map(AREAS.map((a) => [a.id, a]));
 export const areaById = (id: AreaId) => areaMap.get(id)!;
 export const areaName = (id: AreaId) => areaMap.get(id)?.name ?? id;
 
+/** Home base: outbound cargo is consolidated here and company-owned backhaul is unloaded here. */
+export const LUCENA_WAREHOUSE: Place = { name: "Lucena Main Warehouse", areaId: "lucena", address: "Km. 134 Maharlika Hwy., Brgy. Ibabang Dupay, Lucena City" };
+
+export type PlaceKind = "seafood" | "produce" | "feeds" | "frozen" | "port";
+
+/** Named pickup points used for bookings and backhaul. */
+export const PLACES: (Place & { kinds: PlaceKind[] })[] = [
+  { ...LUCENA_WAREHOUSE, kinds: ["seafood", "produce"] },
+  { name: "Dalahican Fish Port", areaId: "lucena", address: "Brgy. Dalahican, Lucena City", kinds: ["seafood"] },
+  { name: "Tayabas Aquaculture Ponds", areaId: "tayabas", address: "Brgy. Ibas, Tayabas City", kinds: ["seafood"] },
+  { name: "Pagbilao Tahong Landing", areaId: "pagbilao", address: "Brgy. Ibabang Palsabangon, Pagbilao", kinds: ["seafood"] },
+  { name: "Valenzuela Produce Depot — Bodega 7", areaId: "valenzuela", address: "Paso de Blas, Valenzuela City", kinds: ["produce"] },
+  { name: "Valenzuela Feeds Warehouse", areaId: "valenzuela", address: "Brgy. Karuhatan, Valenzuela City", kinds: ["feeds"] },
+  { name: "Balintawak Market (Cloverleaf) Bagsakan", areaId: "quezon-city", address: "EDSA cor. A. Bonifacio Ave., Quezon City", kinds: ["produce"] },
+  { name: "Caloocan Cold Storage Hub", areaId: "caloocan", address: "Brgy. 73, Caloocan City", kinds: ["frozen"] },
+  { name: "Divisoria Produce Terminal", areaId: "manila", address: "Tabora St., Divisoria, Manila", kinds: ["produce"] },
+  { name: "Santa Rosa Agri Warehouse", areaId: "santa-rosa", address: "Brgy. Balibago, Santa Rosa", kinds: ["produce", "feeds"] },
+  { name: "Calamba Feeds & Agri Depot", areaId: "calamba", address: "Brgy. Real, Calamba", kinds: ["feeds", "produce"] },
+  { name: "Dasmariñas Vegetable Bagsakan", areaId: "dasmarinas", address: "Brgy. Salitran, Dasmariñas", kinds: ["produce"] },
+  { name: "Batangas Port — Isla Reefer handover", areaId: "batangas-city", address: "Batangas International Port, Sta. Clara", kinds: ["port"] },
+];
+export const placeByName = (name: string) => PLACES.find((p) => p.name === name);
+
 /** Inter-island orders do not travel by our trucks — they are handed to a sea-freight partner at Batangas Port. */
 export const INTER_ISLAND_PARTNER = {
   name: "Isla Reefer Cargo Forwarders",
@@ -45,7 +68,7 @@ export const ROUTES: RouteTemplate[] = [
     id: "RT-NV",
     name: "Lucena → Navotas → Valenzuela",
     outboundAreas: ["navotas", "valenzuela"],
-    returnAreas: ["valenzuela", "caloocan"],
+    returnAreas: ["valenzuela", "caloocan", "quezon-city"],
     roundTripKm: 348,
     tollFee: 3860,
     departure: "03:30",

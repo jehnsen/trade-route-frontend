@@ -5,26 +5,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { addDays, format, parseISO } from "date-fns";
-import { CheckCircle2, Download, Eye, MoreHorizontal, Plus, Printer, Truck, Wallet, XCircle } from "lucide-react";
+import { CheckCircle2, Download, Eye, MoreHorizontal, Plus, Wallet, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import type { AreaId, Order, OrderSource, OrderStatus, PaymentStatus } from "@/types";
 import { useAppStore } from "@/lib/store";
-import { useCustomerMap, useInvoiceMap } from "@/hooks/use-data";
+import { useCustomerMap, useSalesInvoiceMap } from "@/hooks/use-data";
 import { TODAY } from "@/data/company";
 import { AREAS, areaName } from "@/data/areas";
-import { truckById } from "@/data/fleet";
 import { orderTotal, paymentStatusFor } from "@/lib/calc";
 import { orderSummary } from "@/lib/domain";
 import { fmtDateShort, peso, relativeDay } from "@/lib/format";
 import { downloadCsv } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/primitives";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Tabs, TabsList, TabsTrigger } from "@/components/ui/form-controls";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/form-controls";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/overlays";
 import { DataTable } from "@/components/data-table/data-table";
-import { FilterBar, MoneyDisplay, ORDER_SOURCES, PageHeader, SOURCE_META, SourceBadge, EmptyState } from "@/components/shared/common";
+import { FilterBar, FilterSelect, MoneyDisplay, ORDER_SOURCES, PageHeader, SOURCE_META, SourceBadge, EmptyState } from "@/components/shared/common";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { AssignTripDialog, CancelOrderDialog, RecordPaymentDialog } from "./order-dialogs";
+import { CancelOrderDialog, RecordPaymentDialog } from "./order-dialogs";
 
 interface Row {
   order: Order;
@@ -32,7 +31,6 @@ interface Row {
   areaId: AreaId;
   total: number;
   payment: PaymentStatus;
-  truck?: string;
 }
 
 const TABS: { value: string; label: string; match: (s: OrderStatus) => boolean }[] = [
@@ -57,10 +55,9 @@ const DATE_RANGES: { value: string; label: string; test: (d: string) => boolean 
 export function OrdersView({ initial }: { initial: { date?: string; status?: string; source?: string; q?: string } }) {
   const router = useRouter();
   const orders = useAppStore((s) => s.orders);
-  const trips = useAppStore((s) => s.trips);
   const setStatus = useAppStore((s) => s.setOrderStatus);
   const customers = useCustomerMap();
-  const invoiceMap = useInvoiceMap();
+  const invoiceMap = useSalesInvoiceMap();
 
   const [tab, setTab] = React.useState(initial.status ?? "all");
   const [q, setQ] = React.useState(initial.q ?? "");
@@ -68,17 +65,15 @@ export function OrdersView({ initial }: { initial: { date?: string; status?: str
   const [area, setArea] = React.useState<string>("all");
   const [pay, setPay] = React.useState<string>("all");
   const [range, setRange] = React.useState<string>(initial.date ?? "all");
-  const [dialog, setDialog] = React.useState<{ kind: "pay" | "assign" | "cancel"; order: Order } | null>(null);
-
-  const tripTruck = React.useMemo(() => new Map(trips.map((t) => [t.id, truckById(t.truckId).code])), [trips]);
+  const [dialog, setDialog] = React.useState<{ kind: "pay" | "cancel"; order: Order } | null>(null);
 
   const rows: Row[] = React.useMemo(
     () =>
       orders.map((o) => {
         const c = customers.get(o.customerId)!;
-        return { order: o, customer: c.name, areaId: c.areaId, total: orderTotal(o), payment: paymentStatusFor(o, invoiceMap.get(o.id)), truck: o.tripId ? tripTruck.get(o.tripId) : undefined };
+        return { order: o, customer: c.name, areaId: c.areaId, total: orderTotal(o), payment: paymentStatusFor(o, invoiceMap.get(o.id)) };
       }),
-    [orders, customers, invoiceMap, tripTruck],
+    [orders, customers, invoiceMap],
   );
 
   const base = rows.filter(
@@ -136,21 +131,10 @@ export function OrdersView({ initial }: { initial: { date?: string; status?: str
     },
     { id: "status", header: "Status", accessorFn: (r) => r.order.status, cell: ({ row }) => <StatusBadge status={row.original.order.status} /> },
     {
-      id: "truck",
-      header: "Assigned Truck",
-      accessorFn: (r) => r.truck ?? "",
-      cell: ({ row }) =>
-        row.original.truck ? (
-          <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs">
-            <Truck className="size-3.5 text-muted-foreground" /> {row.original.truck}
-          </span>
-        ) : row.original.order.fulfillment === "pickup" ? (
-          <span className="text-xs text-muted-foreground">Bodega pickup</span>
-        ) : row.original.order.fulfillment === "partner" ? (
-          <span className="text-xs text-muted-foreground">Sea-freight partner</span>
-        ) : (
-          <span className="text-xs text-[oklch(0.55_0.13_65)]">Unassigned</span>
-        ),
+      id: "fulfilment",
+      header: "Fulfilment",
+      accessorFn: (r) => r.order.fulfillment,
+      cell: ({ row }) => <span className="text-xs whitespace-nowrap text-muted-foreground">{row.original.order.fulfillment === "pickup" ? "Bodega pickup" : row.original.order.fulfillment === "partner" ? "Sea-freight partner" : "Own truck"}</span>,
     },
     {
       id: "actions",
@@ -180,16 +164,8 @@ export function OrdersView({ initial }: { initial: { date?: string; status?: str
                     <CheckCircle2 /> Confirm
                   </DropdownMenuItem>
                 )}
-                {o.fulfillment === "truck" && ["Pending Confirmation", "Confirmed", "Preparing", "Ready for Dispatch"].includes(o.status) && (
-                  <DropdownMenuItem onSelect={() => setDialog({ kind: "assign", order: o })}>
-                    <Truck /> Assign to trip
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuItem onSelect={() => setDialog({ kind: "pay", order: o })} disabled={o.status === "Cancelled" || o.status === "Draft" || row.original.payment === "Paid"}>
                   <Wallet /> Record payment
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => window.open(`/print/delivery-receipt/${o.id}`, "_blank")}>
-                  <Printer /> Print delivery receipt
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" disabled={["Delivered", "Partially Delivered", "Cancelled", "Out for Delivery"].includes(o.status)} onSelect={() => setDialog({ kind: "cancel", order: o })}>
@@ -206,9 +182,9 @@ export function OrdersView({ initial }: { initial: { date?: string; status?: str
   const channelCounts = ORDER_SOURCES.map((s) => ({ s, n: orders.filter((o) => o.source === s && o.deliveryDate > "2026-08-25").length }));
 
   const exportCsv = () => {
-    downloadCsv(`freshroute-orders-${TODAY}.csv`, [
-      ["Order No.", "Customer", "Source", "Products", "Delivery Area", "Delivery Date", "Total", "Payment", "Status", "Truck"],
-      ...filtered.map((r) => [r.order.id, r.customer, r.order.source, orderSummary(r.order, 5), areaName(r.areaId), r.order.deliveryDate, r.total, r.payment, r.order.status, r.truck ?? ""]),
+    downloadCsv(`tradeloop-sales-orders-${TODAY}.csv`, [
+      ["Order No.", "Customer", "Source", "Products", "Delivery Area", "Delivery Date", "Total", "Payment", "Status"],
+      ...filtered.map((r) => [r.order.id, r.customer, r.order.source, orderSummary(r.order, 5), areaName(r.areaId), r.order.deliveryDate, r.total, r.payment, r.order.status]),
     ]);
     toast.success(`Exported ${filtered.length} orders`, { description: "CSV saved to your downloads." });
   };
@@ -216,8 +192,8 @@ export function OrdersView({ initial }: { initial: { date?: string; status?: str
   return (
     <>
       <PageHeader
-        title="Orders"
-        description="Central order management — every Messenger, phone, Facebook, sales and portal order lands in one list."
+        title="Sales Orders"
+        description="Trading module (Phase 2 preview): product sales from Messenger, phone, Facebook and the portal. Deliveries for these run through logistics jobs once trading goes live."
         actions={
           <>
             <Button variant="outline" onClick={exportCsv}>
@@ -273,7 +249,7 @@ export function OrdersView({ initial }: { initial: { date?: string; status?: str
           columns={columns}
           data={filtered}
           search={q}
-          searchText={(r) => `${r.order.id} ${r.customer} ${orderSummary(r.order, 9)} ${areaName(r.areaId)} ${r.order.tripId ?? ""}`}
+          searchText={(r) => `${r.order.id} ${r.customer} ${orderSummary(r.order, 9)} ${areaName(r.areaId)}`}
           onRowClick={(r) => router.push(`/orders/${r.order.id}`)}
           initialSorting={[{ id: "date", desc: true }]}
           empty={<EmptyState title="No orders found for the selected filters." description="Clear a filter or pick a different tab." />}
@@ -297,25 +273,7 @@ export function OrdersView({ initial }: { initial: { date?: string; status?: str
       </Card>
 
       {dialog?.kind === "pay" && <RecordPaymentDialog order={dialog.order} open onOpenChange={(v) => !v && setDialog(null)} />}
-      {dialog?.kind === "assign" && <AssignTripDialog order={dialog.order} open onOpenChange={(v) => !v && setDialog(null)} />}
       {dialog?.kind === "cancel" && <CancelOrderDialog order={dialog.order} open onOpenChange={(v) => !v && setDialog(null)} />}
     </>
-  );
-}
-
-export function FilterSelect({ value, onChange, options, label, className }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; label: string; className?: string }) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={className ?? "w-full sm:w-44"} aria-label={label}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }

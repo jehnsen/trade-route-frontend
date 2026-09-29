@@ -9,8 +9,6 @@ import type { POStatus, PurchaseOrder } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { supplierById } from "@/data/suppliers";
 import { productById, productLabel } from "@/data/products";
-import { truckById } from "@/data/fleet";
-import { routeById } from "@/data/areas";
 import { poKg, poTotal } from "@/lib/calc";
 import { poSummary } from "@/lib/domain";
 import { fmtDate, fmtDateShort, fmtDateTime, fmtTime, kg, peso, qty } from "@/lib/format";
@@ -57,7 +55,7 @@ export function PurchaseOrdersView({ initialPo }: { initialPo?: string }) {
     { id: "qty", header: "Total Qty", accessorFn: (p) => poKg(p), meta: { align: "right" }, cell: ({ row }) => kg(poKg(row.original)) },
     { id: "val", header: "Value", accessorFn: (p) => poTotal(p), meta: { align: "right" }, cell: ({ row }) => <span className="font-medium">{peso(poTotal(row.original))}</span> },
     { id: "pickup", header: "Pickup Location", accessorFn: (p) => p.pickupLocation, cell: ({ row }) => <div className="whitespace-nowrap">{row.original.deliveredBySupplier ? "Supplier delivers to bodega" : row.original.pickupLocation}<div className="text-xs text-muted-foreground">{fmtDateShort(row.original.pickupDate)}{row.original.pickupEta ? ` · ${fmtTime(row.original.pickupEta)}` : ""}</div></div> },
-    { id: "trip", header: "Assigned Trip", accessorFn: (p) => p.tripId ?? "", cell: ({ row }) => (row.original.tripId ? <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs"><Truck className="size-3.5 text-muted-foreground" />{row.original.tripId}</span> : row.original.deliveredBySupplier ? <span className="text-xs text-muted-foreground">—</span> : <span className="text-xs text-[oklch(0.55_0.13_65)]">Unassigned</span>) },
+    { id: "collect", header: "Collection", accessorFn: (p) => (p.deliveredBySupplier ? "supplier" : "pickup"), cell: ({ row }) => <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">{row.original.deliveredBySupplier ? "Supplier delivers" : <><Truck className="size-3.5" /> Our pickup</>}</span> },
     { id: "status", header: "Status", accessorFn: (p) => p.status, cell: ({ row }) => <StatusBadge status={row.original.status} /> },
   ];
 
@@ -89,7 +87,7 @@ export function PurchaseOrdersView({ initialPo }: { initialPo?: string }) {
           columns={columns}
           data={data}
           search={q}
-          searchText={(p) => `${p.id} ${supplierById(p.supplierId).name} ${poSummary(p, 9)} ${p.tripId ?? ""} ${p.pickupLocation}`}
+          searchText={(p) => `${p.id} ${supplierById(p.supplierId).name} ${poSummary(p, 9)} ${p.pickupLocation}`}
           initialSorting={[{ id: "id", desc: true }]}
           onRowClick={(p) => setSelected(p.id)}
           rowClassName={(p) => (p.id === selected ? "bg-accent/50" : undefined)}
@@ -116,9 +114,7 @@ export function PurchaseOrdersView({ initialPo }: { initialPo?: string }) {
 
 function PODetail({ po }: { po: PurchaseOrder }) {
   const setStatus = useAppStore((s) => s.setPOStatus);
-  const trips = useAppStore((s) => s.trips);
   const sup = supplierById(po.supplierId);
-  const trip = po.tripId ? trips.find((t) => t.id === po.tripId) : undefined;
   const next = NEXT[po.status];
   return (
     <div className="grid gap-4 p-5">
@@ -134,7 +130,7 @@ function PODetail({ po }: { po: PurchaseOrder }) {
         <Stat label="Supplier" value={<Link className="text-primary hover:underline" href={`/suppliers/${sup.id}`}>{sup.name}</Link>} sub={`${sup.contactPerson} · ${sup.phone}`} />
         <Stat label="Payment terms" value={sup.paymentTerms} />
         <Stat label="Pickup" value={po.deliveredBySupplier ? "Supplier delivers" : po.pickupLocation} sub={`${fmtDate(po.pickupDate)}${po.pickupEta ? ` · ${fmtTime(po.pickupEta)}` : ""}`} />
-        <Stat label="Return trip" value={trip ? <Link className="text-primary hover:underline" href={`/trips/${trip.id}`}>{trip.id}</Link> : "—"} sub={trip ? `${truckById(trip.truckId).code} · ${routeById(trip.routeId).name}` : undefined} />
+        <Stat label="Collection" value={po.deliveredBySupplier ? "Supplier delivers to bodega" : "Picked up by our truck"} sub={po.deliveredBySupplier ? undefined : "Hauled as company-owned cargo (Loads)"} />
       </div>
       <Table>
         <TableHeader>
@@ -182,9 +178,9 @@ function PODetail({ po }: { po: PurchaseOrder }) {
             Cancel PO
           </Button>
         )}
-        {!po.tripId && !po.deliveredBySupplier && po.status !== "Cancelled" && (
+        {!po.deliveredBySupplier && po.status !== "Cancelled" && po.status !== "Received" && (
           <Button variant="outline" asChild>
-            <Link href="/backhaul">Find a return trip</Link>
+            <Link href="/loads">Add as company cargo on a trip</Link>
           </Button>
         )}
       </div>

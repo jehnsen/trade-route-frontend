@@ -1,9 +1,9 @@
 import { differenceInCalendarDays, parseISO } from "date-fns";
-import type { Invoice, Order, OrderItem, PaymentStatus, PaymentTerms, Payment, PurchaseOrder } from "@/types";
+import type { Order, OrderItem, PaymentStatus, PaymentTerms, PurchaseOrder, SalesInvoice, SalesPayment } from "@/types";
 import { productById } from "@/data/products";
 import { TODAY } from "@/data/company";
 
-// ─── Order math ─────────────────────────────────────────────────────────────
+// ─── Trading: order math ─────────────────────────────────────────────────────────────
 export const itemAmount = (i: OrderItem) => i.quantity * i.unitPrice;
 export const itemDeliveredAmount = (i: OrderItem) => (i.deliveredQty ?? i.quantity) * i.unitPrice;
 
@@ -50,9 +50,9 @@ export function termsDays(t: PaymentTerms) {
 }
 export const isCreditTerms = (t: PaymentTerms) => t.startsWith("Credit");
 
-// ─── Invoices ───────────────────────────────────────────────────────────────
-export const invoiceIdForOrder = (orderId: string) => orderId.replace("FR-", "INV-");
-export const orderIdForInvoice = (invoiceId: string) => invoiceId.replace("INV-", "FR-");
+// ─── Trading: sales invoices ───────────────────────────────────────────────────────────────
+export const invoiceIdForOrder = (orderId: string) => orderId.replace("FR-", "SI-");
+export const orderIdForInvoice = (invoiceId: string) => invoiceId.replace("SI-", "FR-");
 
 /** An order is invoiced once delivered (or handed to the sea-freight partner). */
 export function isInvoiced(o: Order) {
@@ -72,10 +72,10 @@ export function invoiceIssueDate(o: Order) {
   return o.deliveredAt ? o.deliveredAt.slice(0, 10) : o.deliveryDate;
 }
 
-export function buildInvoices(orders: Order[], payments: Payment[], today = TODAY): Invoice[] {
+export function buildSalesInvoices(orders: Order[], payments: SalesPayment[], today = TODAY): SalesInvoice[] {
   const paidByInvoice = new Map<string, number>();
   for (const p of payments) paidByInvoice.set(p.invoiceId, (paidByInvoice.get(p.invoiceId) ?? 0) + p.amount);
-  const out: Invoice[] = [];
+  const out: SalesInvoice[] = [];
   for (const o of orders) {
     if (!isInvoiced(o)) continue;
     const id = invoiceIdForOrder(o.id);
@@ -101,7 +101,7 @@ export function buildInvoices(orders: Order[], payments: Payment[], today = TODA
   return out;
 }
 
-export function paymentStatusFor(o: Order, invoice: Invoice | undefined): PaymentStatus {
+export function paymentStatusFor(o: Order, invoice: SalesInvoice | undefined): PaymentStatus {
   if (invoice) {
     if (invoice.balance <= 0) return "Paid";
     if (invoice.paid > 0) return "Partial";

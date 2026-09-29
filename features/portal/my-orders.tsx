@@ -6,12 +6,12 @@ import { toast } from "sonner";
 import { CalendarClock, Pause, Pencil, Play, Plus, Printer, Trash2, Truck } from "lucide-react";
 import type { Order, StandingOrder, Weekday } from "@/types";
 import { useAppStore, PORTAL_CUSTOMER_ID, useHydrated } from "@/lib/store";
-import { useCustomerStats, useInvoices } from "@/hooks/use-data";
+import { useSalesCustomerStats, useSalesInvoices } from "@/hooks/use-data";
 import { PRODUCTS, productById, productLabel } from "@/data/products";
 import { truckById } from "@/data/fleet";
 import { orderTotal } from "@/lib/calc";
 import { orderSummary } from "@/lib/domain";
-import { fmtDate, fmtDateTime, fmtDay, fmtTime, peso, qty } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtDay, fmtTime, kg, peso, qty } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, Input, Skeleton } from "@/components/ui/primitives";
@@ -26,7 +26,7 @@ const DAYS: Weekday[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
 
 function customerStatus(o: Order): string {
   if (o.status === "Pending Confirmation" || o.status === "Draft") return "Waiting Confirmation";
-  if (o.status === "Confirmed" || o.status === "Preparing" || o.status === "Ready for Dispatch") return o.tripId ? "Scheduled" : "Confirmed";
+  if (o.status === "Confirmed" || o.status === "Preparing" || o.status === "Ready for Dispatch") return "Confirmed";
   if (o.status === "Out for Delivery") return "In Transit";
   return o.status;
 }
@@ -44,18 +44,19 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
   const hydrated = useHydrated((s) => s.hydrated);
   const orders = useAppStore((s) => s.orders);
   const quotes = useAppStore((s) => s.quoteRequests);
-  const payments = useAppStore((s) => s.payments);
+  const payments = useAppStore((s) => s.salesPayments);
   const deliveries = useAppStore((s) => s.deliveries);
+  const jobs = useAppStore((s) => s.jobs);
   const trips = useAppStore((s) => s.trips);
   const standing = useAppStore((s) => s.standingOrders);
   const setSO = useAppStore((s) => s.setStandingOrderStatus);
   const customer = useAppStore((s) => s.customers.find((c) => c.id === PORTAL_CUSTOMER_ID))!;
-  const invoices = useInvoices().filter((i) => i.customerId === PORTAL_CUSTOMER_ID);
-  const stats = useCustomerStats().get(PORTAL_CUSTOMER_ID)!;
+  const invoices = useSalesInvoices().filter((i) => i.customerId === PORTAL_CUSTOMER_ID);
+  const stats = useSalesCustomerStats().get(PORTAL_CUSTOMER_ID)!;
   const [editing, setEditing] = React.useState<StandingOrder | "new" | null>(null);
 
   const mine = orders.filter((o) => o.customerId === PORTAL_CUSTOMER_ID && o.status !== "Draft").sort((a, b) => b.deliveryDate.localeCompare(a.deliveryDate) || b.createdAt.localeCompare(a.createdAt));
-  const myDeliveries = deliveries.filter((d) => mine.some((o) => o.id === d.orderId)).sort((a, b) => b.eta.localeCompare(a.eta));
+  const myDeliveries = deliveries.filter((d) => d.customerId === PORTAL_CUSTOMER_ID).sort((a, b) => b.eta.localeCompare(a.eta));
   const myQuotes = quotes.filter((q) => q.customerId === PORTAL_CUSTOMER_ID || q.businessName === customer.name);
   const myPayments = payments.filter((p) => p.customerId === PORTAL_CUSTOMER_ID).sort((a, b) => b.date.localeCompare(a.date));
   const mySO = standing.filter((s) => s.customerId === PORTAL_CUSTOMER_ID);
@@ -101,7 +102,7 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
         <TabsList className="w-full sm:w-fit">
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="quotes">Quotes</TabsTrigger>
-          <TabsTrigger value="deliveries">Deliveries</TabsTrigger>
+          <TabsTrigger value="deliveries">Shipments</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="standing">Standing Orders</TabsTrigger>
@@ -111,8 +112,6 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
           {mine.length === 0 && <EmptyState title="No orders yet" />}
           {mine.slice(0, 20).map((o) => {
             const st = customerStatus(o);
-            const d = deliveries.find((x) => x.orderId === o.id);
-            const t = trips.find((x) => x.id === o.tripId);
             return (
               <Card key={o.id} className="gap-2 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -128,7 +127,6 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span className="text-muted-foreground">
                     Delivery {fmtDay(o.deliveryDate)}
-                    {t && d && ` · ${truckById(t.truckId).code} · ETA ${fmtTime(d.eta)}`}
                   </span>
                   <span className="font-semibold tabular">{peso(orderTotal(o))}</span>
                 </div>
@@ -168,8 +166,9 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
         </TabsContent>
 
         <TabsContent value="deliveries" className="grid gap-3 md:grid-cols-2">
+          {myDeliveries.length === 0 && <EmptyState title="No shipments yet" className="md:col-span-2" />}
           {myDeliveries.slice(0, 10).map((d) => {
-            const o = mine.find((x) => x.id === d.orderId)!;
+            const job = jobs.find((x) => x.id === d.jobId);
             const t = trips.find((x) => x.id === d.tripId)!;
             return (
               <Card key={d.id} className="gap-2 p-4">
@@ -181,7 +180,9 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
                   <Truck className="size-4" /> {truckById(t.truckId).code} · {fmtDay(t.date)} · ETA {fmtTime(d.eta)}
                   {d.completedAt && ` · delivered ${fmtTime(d.completedAt)}`}
                 </div>
-                <div className="text-sm">{orderSummary(o)}</div>
+                <div className="text-sm">
+                  {job?.cargoDescription} · {job ? kg(job.weightKg) : ""} · {job?.id}
+                </div>
                 {d.pod && <PodCard pod={d.pod} title="Proof of delivery" />}
               </Card>
             );

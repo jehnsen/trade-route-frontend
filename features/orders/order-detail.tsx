@@ -3,15 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Anchor, CheckCircle2, ClipboardCheck, FileText, MapPin, Pencil, Phone, Printer, Ship, Truck, UserRound, Wallet, XCircle, Camera, PackageOpen, Warehouse } from "lucide-react";
+import { Anchor, CheckCircle2, ClipboardCheck, ClipboardList, FileText, Pencil, Phone, Ship, Truck, UserRound, Wallet, XCircle, Warehouse } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { useCustomerMap, useInvoiceMap, useStock } from "@/hooks/use-data";
+import { useCustomerMap, useSalesInvoiceMap, useStock } from "@/hooks/use-data";
 import { productById, productLabel } from "@/data/products";
-import { areaName, routeById, INTER_ISLAND_PARTNER } from "@/data/areas";
-import { truckById, driverById } from "@/data/fleet";
+import { areaName, INTER_ISLAND_PARTNER } from "@/data/areas";
 import { staffById } from "@/data/company";
 import { itemAmount, orderLoadKg, orderNetKg, orderSubtotal, orderTotal, paymentStatusFor } from "@/lib/calc";
-import { fmtDate, fmtDateTime, fmtDay, fmtTime, kg, peso, qty } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtDay, kg, peso, qty } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, Separator } from "@/components/ui/primitives";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -19,25 +18,21 @@ import { AddressDisplay, MoneyDisplay, PageHeader, SourceBadge, Stat, Timeline, 
 import { StatusBadge, ReceivableBadge } from "@/components/shared/status-badge";
 import { ProductImage } from "@/components/shared/product-image";
 import { RecordNotFound } from "@/components/shared/states";
-import { AssignTripDialog, CancelOrderDialog, EditOrderDialog, RecordPaymentDialog } from "./order-dialogs";
+import { CancelOrderDialog, EditOrderDialog, RecordPaymentDialog } from "./order-dialogs";
 
 export function OrderDetail({ id }: { id: string }) {
   const order = useAppStore((s) => s.orders.find((o) => o.id === id));
-  const trips = useAppStore((s) => s.trips);
-  const deliveries = useAppStore((s) => s.deliveries);
-  const payments = useAppStore((s) => s.payments);
+  const payments = useAppStore((s) => s.salesPayments);
   const setStatus = useAppStore((s) => s.setOrderStatus);
   const customers = useCustomerMap();
-  const invoice = useInvoiceMap().get(id);
+  const invoice = useSalesInvoiceMap().get(id);
   const stock = useStock();
-  const [dialog, setDialog] = React.useState<"pay" | "assign" | "cancel" | "edit" | null>(null);
+  const [dialog, setDialog] = React.useState<"pay" | "cancel" | "edit" | null>(null);
 
   if (!order) return <RecordNotFound kind="Order" id={id} backHref="/orders" backLabel="Back to orders" />;
 
   const c = customers.get(order.customerId)!;
   const address = c.addresses.find((a) => a.id === order.addressId) ?? c.addresses[0];
-  const trip = order.tripId ? trips.find((t) => t.id === order.tripId) : undefined;
-  const delivery = deliveries.find((d) => d.orderId === order.id);
   const orderPayments = payments.filter((p) => p.orderId === order.id).sort((a, b) => a.date.localeCompare(b.date));
   const payStatus = paymentStatusFor(order, invoice);
   const total = orderTotal(order);
@@ -49,22 +44,17 @@ export function OrderDetail({ id }: { id: string }) {
   const deliveryTimeline: TimelineItem[] = [{ title: "Order received", at: fmtDateTime(order.createdAt), meta: order.history[0]?.by, state: "done", icon: FileText }];
   deliveryTimeline.push({ title: "Order confirmed", at: confirmedEvent ? fmtDateTime(confirmedEvent.at) : undefined, meta: confirmedEvent?.by, state: confirmedEvent ? "done" : order.status === "Cancelled" ? "failed" : "current", icon: CheckCircle2 });
   if (order.fulfillment === "truck") {
-    const assigned = order.history.find((e) => e.label.startsWith("Assigned to"));
-    const loaded = order.history.find((e) => e.label.startsWith("Loaded") || e.label.startsWith("Loading started"));
-    const done = delivery?.status === "Delivered";
+    const out = order.history.find((e) => e.label === "Out for delivery");
+    const done = order.history.find((e) => e.label === "Delivered" || e.label === "Partially delivered" || e.label.startsWith("Delivery failed"));
     deliveryTimeline.push(
-      { title: trip ? `Assigned to ${trip.id} (${truckById(trip.truckId).code})` : "Assign to a trip", at: assigned ? fmtDateTime(assigned.at) : undefined, meta: assigned?.by, state: trip ? "done" : "pending", icon: Truck },
-      { title: "Loading started", at: loaded ? fmtDateTime(loaded.at) : undefined, meta: loaded ? "Lucena Main Warehouse" : undefined, state: loaded ? (trip?.status === "Loading" ? "current" : "done") : "pending", icon: PackageOpen },
-      { title: "Truck departed Lucena", at: trip?.actualDeparture ? fmtDateTime(trip.actualDeparture) : trip ? `Planned ${fmtTime(trip.departure)}` : undefined, meta: trip ? driverById(trip.driverId).name : undefined, state: trip?.actualDeparture ? "done" : "pending", icon: Truck },
-      { title: `Arrived ${areaName(c.areaId)}`, at: delivery?.arrivedAt ? fmtDateTime(delivery.arrivedAt) : delivery ? `ETA ${fmtTime(delivery.eta)}` : undefined, state: delivery?.arrivedAt ? "done" : delivery?.status === "In Transit" ? "current" : "pending", icon: MapPin },
+      { title: "Out for delivery (own truck)", at: out ? fmtDateTime(out.at) : undefined, meta: out?.by, state: out ? "done" : "pending", icon: Truck },
       {
-        title: delivery?.status === "Returned" ? "Delivery failed — returned to Lucena" : order.status === "Partially Delivered" ? "Partially delivered" : "Delivered",
-        at: delivery?.completedAt ? fmtDateTime(delivery.completedAt) : undefined,
-        note: delivery?.failureReason,
-        state: delivery?.status === "Returned" ? "failed" : done ? "done" : "pending",
+        title: order.cancelReason?.startsWith("Returned") ? "Delivery failed — returned to Lucena" : order.status === "Partially Delivered" ? "Partially delivered" : "Delivered",
+        at: order.deliveredAt ? fmtDateTime(order.deliveredAt) : done ? fmtDateTime(done.at) : undefined,
+        note: done?.note,
+        state: order.cancelReason?.startsWith("Returned") ? "failed" : order.deliveredAt ? "done" : "pending",
         icon: CheckCircle2,
       },
-      { title: "Proof of delivery uploaded", at: delivery?.pod ? fmtDateTime(delivery.pod.signedAt) : undefined, meta: delivery?.pod ? `Received by ${delivery.pod.receivedBy} · ${delivery.pod.photoCount} photo(s)` : undefined, note: delivery?.pod?.remarks, state: delivery?.pod ? "done" : "pending", icon: Camera },
     );
   } else if (order.fulfillment === "pickup") {
     const prepared = order.history.find((e) => e.label === "Prepared at bodega");
@@ -114,22 +104,19 @@ export function OrderDetail({ id }: { id: string }) {
                 size="sm"
                 onClick={() => {
                   setStatus(order.id, "Confirmed");
-                  toast.success(`${order.id} confirmed`, { description: "Stock reserved. Ready for trip assignment." });
+                  toast.success(`${order.id} confirmed`, { description: "Stock reserved." });
                 }}
               >
                 <CheckCircle2 /> Confirm
               </Button>
             )}
             {order.fulfillment === "truck" && open && (
-              <Button variant="outline" size="sm" onClick={() => setDialog("assign")}>
-                <Truck /> {order.tripId ? "Change Trip" : "Assign to Trip"}
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/jobs/new?customer=${order.customerId}`}>
+                  <ClipboardList /> Book delivery job
+                </Link>
               </Button>
             )}
-            <Button variant="outline" size="sm" asChild>
-              <a href={`/print/delivery-receipt/${order.id}`} target="_blank" rel="noreferrer">
-                <Printer /> Print Delivery Receipt
-              </a>
-            </Button>
             <Button variant="outline" size="sm" onClick={() => setDialog("pay")} disabled={order.status === "Cancelled" || order.status === "Draft" || payStatus === "Paid"}>
               <Wallet /> Record Payment
             </Button>
@@ -338,33 +325,15 @@ export function OrderDetail({ id }: { id: string }) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Dispatch</CardTitle>
-              {delivery && <StatusBadge status={delivery.status} />}
+              <CardTitle>Fulfilment</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3">
-              {trip ? (
-                <>
-                  <Stat label="Assigned trip" value={<Link href={`/trips/${trip.id}`} className="text-primary hover:underline">{trip.id}</Link>} sub={routeById(trip.routeId).name} />
-                  <div className="grid grid-cols-2 gap-3">
-                    <Stat label="Assigned truck" value={<Link href={`/trucks/${trip.truckId}`} className="hover:underline">{truckById(trip.truckId).code}</Link>} sub={truckById(trip.truckId).plateNo} />
-                    <Stat label="Driver" value={driverById(trip.driverId).name} sub={driverById(trip.driverId).phone} />
-                    <Stat label="Stop no." value={delivery ? `${delivery.stopSeq}` : "—"} />
-                    <Stat label="ETA" value={delivery ? fmtTime(delivery.eta) : "—"} />
-                  </div>
-                </>
-              ) : order.fulfillment === "pickup" ? (
+              {order.fulfillment === "pickup" ? (
                 <p className="text-sm text-muted-foreground">Customer picks up at the Lucena Main Warehouse (bodega).</p>
               ) : order.fulfillment === "partner" ? (
                 <p className="text-sm text-muted-foreground">{INTER_ISLAND_PARTNER.note}. Handled by {INTER_ISLAND_PARTNER.name}.</p>
               ) : (
-                <div className="grid gap-2">
-                  <p className="text-sm text-muted-foreground">Not yet assigned to a trip.</p>
-                  {open && (
-                    <Button size="sm" variant="outline" onClick={() => setDialog("assign")}>
-                      <Truck /> Assign to Trip
-                    </Button>
-                  )}
-                </div>
+                <p className="text-sm text-muted-foreground">Delivered on our own trucks. In the logistics system, the truck movement for a sales order is booked as a logistics job and planned on the Dispatch board.</p>
               )}
             </CardContent>
           </Card>
@@ -384,7 +353,6 @@ export function OrderDetail({ id }: { id: string }) {
       </div>
 
       {dialog === "pay" && <RecordPaymentDialog order={order} open onOpenChange={(v) => !v && setDialog(null)} />}
-      {dialog === "assign" && <AssignTripDialog order={order} open onOpenChange={(v) => !v && setDialog(null)} />}
       {dialog === "cancel" && <CancelOrderDialog order={order} open onOpenChange={(v) => !v && setDialog(null)} />}
       {dialog === "edit" && <EditOrderDialog order={order} open onOpenChange={(v) => !v && setDialog(null)} />}
     </>

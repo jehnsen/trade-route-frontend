@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { Eye, MoreHorizontal, Printer, Send, Wallet } from "lucide-react";
-import type { Invoice, Order } from "@/types";
+import type { Invoice, LogisticsJob } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useCustomerStats, useInvoices } from "@/hooks/use-data";
 import { agingBucket, type AgingBucket } from "@/lib/calc";
@@ -19,8 +19,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { DataTable } from "@/components/data-table/data-table";
 import { FilterBar, MoneyDisplay, PageHeader, EmptyState } from "@/components/shared/common";
 import { ReceivableBadge, StatusBadge } from "@/components/shared/status-badge";
-import { RecordPaymentDialog } from "@/features/orders/order-dialogs";
-import { FilterSelect } from "@/features/orders/orders-view";
+import { RecordPaymentDialog } from "./record-payment-dialog";
+import { FilterSelect } from "@/components/shared/common";
 
 export const BUCKETS: { key: AgingBucket; label: string; color: string }[] = [
   { key: "current", label: "Current", color: "var(--chart-1)" },
@@ -42,13 +42,13 @@ interface CustRow {
 
 export function ReceivablesView() {
   const router = useRouter();
-  const orders = useAppStore((s) => s.orders);
+  const jobs = useAppStore((s) => s.jobs);
   const invoices = useInvoices();
   const customers = useCustomerMap();
   const stats = useCustomerStats();
   const [q, setQ] = React.useState("");
   const [bucket, setBucket] = React.useState("all");
-  const [payFor, setPayFor] = React.useState<Order | null>(null);
+  const [payFor, setPayFor] = React.useState<LogisticsJob | null>(null);
 
   const open = invoices.filter((i) => i.balance > 0);
   const total = sumBy(open, (i) => i.balance);
@@ -86,7 +86,7 @@ export function ReceivablesView() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => row.original.oldest && setPayFor(orders.find((o) => o.id === row.original.oldest!.orderId)!)}>
+              <DropdownMenuItem onSelect={() => row.original.oldest && setPayFor(jobs.find((j) => j.id === row.original.oldest!.jobId)!)}>
                 <Wallet /> Record payment (oldest)
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => remind(row.original.name)}>
@@ -108,6 +108,7 @@ export function ReceivablesView() {
   const invCols: ColumnDef<Invoice, unknown>[] = [
     { id: "id", header: "Invoice", accessorFn: (i) => i.id, cell: ({ row }) => <Link href={`/accounts-receivable/${row.original.id}`} className="font-medium whitespace-nowrap text-primary hover:underline">{row.original.id}</Link> },
     { id: "cust", header: "Customer", accessorFn: (i) => customers.get(i.customerId)?.name, cell: ({ getValue }) => <span className="font-medium">{getValue() as string}</span> },
+    { id: "job", header: "Job / trip", accessorFn: (i) => i.jobId, cell: ({ row }) => <div className="text-xs whitespace-nowrap"><Link href={`/jobs/${row.original.jobId}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>{row.original.jobId}</Link>{row.original.tripId && <div className="text-muted-foreground">{row.original.tripId}</div>}</div> },
     { id: "issue", header: "Issued", accessorFn: (i) => i.issueDate, cell: ({ row }) => <span className="whitespace-nowrap">{fmtDate(row.original.issueDate)}</span> },
     { id: "due", header: "Due", accessorFn: (i) => i.dueDate, cell: ({ row }) => <span className="whitespace-nowrap">{fmtDate(row.original.dueDate)}</span> },
     { id: "total", header: "Amount", accessorFn: (i) => i.total, meta: { align: "right" }, cell: ({ row }) => peso(row.original.total) },
@@ -119,7 +120,7 @@ export function ReceivablesView() {
 
   return (
     <>
-      <PageHeader title="Accounts Receivable" description="Who owes what, and for how long. Payments recorded anywhere in TradeLoop reduce these balances immediately." />
+      <PageHeader title="Receivables" description="Freight billed on delivered jobs — who owes what, and for how long. Payments recorded anywhere in TradeLoop (driver COD, accounting, job page) reduce these balances immediately." />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Card className="col-span-2 gap-1 bg-[oklch(0.25_0.04_220)] p-4 text-white md:col-span-1">
@@ -199,7 +200,7 @@ export function ReceivablesView() {
           </Card>
         </TabsContent>
       </Tabs>
-      {payFor && <RecordPaymentDialog order={payFor} open onOpenChange={(v) => !v && setPayFor(null)} />}
+      {payFor && <RecordPaymentDialog job={payFor} open onOpenChange={(v) => !v && setPayFor(null)} />}
     </>
   );
 }

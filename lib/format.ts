@@ -16,6 +16,12 @@ export function pesoCompact(n: number) {
 export const num = (n: number) => numFmt.format(n);
 export const kg = (n: number) => `${numFmt.format(Math.round(n))} kg`;
 export const qty = (n: number, unit: string) => `${numFmt.format(n)} ${unit === "pc" ? "pcs" : unit}`;
+/** Handling units: "1 sack", "24 styro boxes", "3 bundles" (kg and pc keep their short forms). */
+export function unitQty(n: number, unit: string) {
+  if (unit === "kg" || unit === "pc") return qty(n, unit);
+  const plural = n === 1 ? unit : /(x|s|ch|sh)$/.test(unit) ? `${unit}es` : `${unit}s`;
+  return `${numFmt.format(n)} ${plural}`;
+}
 export const pct = (n: number, digits = 0) => `${(n * 100).toFixed(digits)}%`;
 
 export const fmtDate = (iso: string) => format(parseISO(iso), "MMM d, yyyy");

@@ -84,7 +84,7 @@ export function SupplierDetail({ id }: { id: string }) {
                   <TableHead>PO</TableHead>
                   <TableHead>Pickup</TableHead>
                   <TableHead>Products</TableHead>
-                  <TableHead>Trip</TableHead>
+                  <TableHead>Collection</TableHead>
                   <TableHead className="text-right">Value</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -99,7 +99,7 @@ export function SupplierDetail({ id }: { id: string }) {
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{fmtDateShort(p.pickupDate)}</TableCell>
                     <TableCell className="text-muted-foreground">{poSummary(p, 3)}</TableCell>
-                    <TableCell className="text-xs">{p.tripId ? <Link className="hover:underline" href={`/trips/${p.tripId}`}>{p.tripId}</Link> : "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{p.deliveredBySupplier ? "Supplier delivers" : "Our pickup"}</TableCell>
                     <TableCell className="text-right tabular">{peso(poTotal(p))}</TableCell>
                     <TableCell>
                       <StatusBadge status={p.status} />

@@ -3,15 +3,15 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, FlaskConical, Lock, Menu, RotateCcw, Search, Sparkles } from "lucide-react";
+import { ChevronDown, FlaskConical, Lock, Menu, RotateCcw, Search, Sparkles, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { Role } from "@/types";
 import { cn } from "@/lib/utils";
-import { NAV, FUTURE_MODULES, ROLE_META, canAccess } from "@/lib/nav";
+import { NAV, FUTURE_MODULES, ROLE_META, TRADING_NAV, INTERNAL_PREFIXES, canAccess, type NavBadgeKey } from "@/lib/nav";
 import { useAppStore, actorFor } from "@/lib/store";
 import { useInvoices } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
-import { unassignedTruckOrders } from "@/lib/selectors";
+import { documentStatus, unassignedJobs } from "@/lib/logistics";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/primitives";
@@ -33,19 +33,51 @@ import { Logo } from "./brand";
 import { GlobalSearch } from "./global-search";
 import { NotificationsBell } from "./notifications-bell";
 
-function useNavBadges() {
-  const orders = useAppStore((s) => s.orders);
+function useNavBadges(): Record<NavBadgeKey, number> {
+  const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
+  const quotes = useAppStore((s) => s.quotes);
+  const maintenance = useAppStore((s) => s.maintenance);
+  const documents = useAppStore((s) => s.documents);
+  const deliveries = useAppStore((s) => s.deliveries);
   const invoices = useInvoices();
   return React.useMemo(() => {
     const overdueCustomers = new Set(invoices.filter((i) => i.daysOverdue > 0 && i.balance > 0).map((i) => i.customerId));
     return {
-      pendingOrders: orders.filter((o) => o.status === "Pending Confirmation").length,
-      unassigned: unassignedTruckOrders(orders, TODAY).length + unassignedTruckOrders(orders, TOMORROW).length,
+      awaitingDispatch: unassignedJobs(jobs).filter((j) => j.pickupAt.slice(0, 10) <= TOMORROW).length,
       overdue: overdueCustomers.size,
       newLeads: leads.filter((l) => l.stage === "New").length,
+      openQuotes: quotes.filter((q) => q.status === "Sent" || (q.status === "Accepted" && !q.jobId)).length,
+      maintenanceDue: maintenance.filter((m) => m.status === "Scheduled" && m.date < TODAY).length,
+      docsExpiring: documents.filter((d) => documentStatus(d).status !== "Valid").length,
+      deliveryIssues: deliveries.filter((d) => d.status === "Failed" || (d.issues.length > 0 && d.status !== "Delivered" && d.status !== "Returned")).length,
     };
-  }, [orders, leads, invoices]);
+  }, [jobs, leads, quotes, maintenance, documents, deliveries, invoices]);
+}
+
+function SidebarLink({ href, label, icon: Icon, count, danger, onNavigate, subtle }: { href: string; label: string; icon: LucideIcon; count?: number; danger?: boolean; onNavigate?: () => void; subtle?: boolean }) {
+  const pathname = usePathname();
+  const active = pathname === href || pathname.startsWith(href + "/");
+  return (
+    <li>
+      <Link
+        href={href}
+        onClick={onNavigate}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "group flex items-center gap-2.5 rounded-md px-2 py-1.5 font-medium transition-colors",
+          subtle ? "text-[13px]" : "text-[13.5px]",
+          active ? "bg-sidebar-active text-white shadow-sm" : subtle ? "text-sidebar-muted hover:bg-sidebar-accent hover:text-white" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
+        )}
+      >
+        <Icon className={cn("size-4 shrink-0", active ? "text-white" : "text-sidebar-muted group-hover:text-white")} />
+        <span className="flex-1 truncate">{label}</span>
+        {!!count && count > 0 && (
+          <span className={cn("rounded-full px-1.5 text-[10.5px] font-semibold tabular", danger ? "bg-[oklch(0.56_0.2_25)] text-white" : active ? "bg-white/25 text-white" : "bg-white/10 text-sidebar-foreground")}>{count}</span>
+        )}
+      </Link>
+    </li>
+  );
 }
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
@@ -53,6 +85,8 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const role = useAppStore((s) => s.role);
   const badges = useNavBadges();
   const [futureOpen, setFutureOpen] = React.useState(pathname.startsWith("/future"));
+  const tradingItems = TRADING_NAV.filter((i) => i.roles.includes(role) || role === "owner");
+  const [tradingOpen, setTradingOpen] = React.useState(TRADING_NAV.some((i) => pathname === i.href || pathname.startsWith(i.href + "/")));
   return (
     <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4 scrollbar-thin" aria-label="Main">
       {NAV.map((section) => {
@@ -62,35 +96,30 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           <div key={section.label}>
             <div className="px-2 pb-1 text-[10.5px] font-semibold tracking-wider text-sidebar-muted uppercase">{section.label}</div>
             <ul className="grid gap-0.5">
-              {items.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(item.href + "/");
-                const count = item.badgeKey ? badges[item.badgeKey] : 0;
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      onClick={onNavigate}
-                      aria-current={active ? "page" : undefined}
-                      className={cn(
-                        "group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13.5px] font-medium transition-colors",
-                        active ? "bg-sidebar-active text-white shadow-sm" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
-                      )}
-                    >
-                      <item.icon className={cn("size-4 shrink-0", active ? "text-white" : "text-sidebar-muted group-hover:text-white")} />
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {count > 0 && (
-                        <span className={cn("rounded-full px-1.5 text-[10.5px] font-semibold tabular", item.badgeKey === "overdue" ? "bg-[oklch(0.56_0.2_25)] text-white" : active ? "bg-white/25 text-white" : "bg-white/10 text-sidebar-foreground")}>
-                          {count}
-                        </span>
-                      )}
-                    </Link>
-                  </li>
-                );
-              })}
+              {items.map((item) => (
+                <SidebarLink key={item.href} href={item.href} label={item.label} icon={item.icon} count={item.badgeKey ? badges[item.badgeKey] : 0} danger={item.badgeKey === "overdue" || item.badgeKey === "docsExpiring"} onNavigate={onNavigate} />
+              ))}
             </ul>
           </div>
         );
       })}
+      {tradingItems.length > 0 && (
+        <div className="border-t border-sidebar-border pt-3">
+          <button type="button" onClick={() => setTradingOpen((v) => !v)} className="flex w-full cursor-pointer items-center justify-between px-2 pb-1 text-[10.5px] font-semibold tracking-wider text-sidebar-muted uppercase hover:text-white" aria-expanded={tradingOpen}>
+            <span>
+              Trading <span className="font-medium tracking-normal normal-case">· Phase 2 preview</span>
+            </span>
+            <ChevronDown className={cn("size-3.5 transition-transform", tradingOpen && "rotate-180")} />
+          </button>
+          {tradingOpen && (
+            <ul className="grid gap-0.5">
+              {tradingItems.map((item) => (
+                <SidebarLink key={item.href} href={item.href} label={item.label} icon={item.icon} onNavigate={onNavigate} subtle />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div>
         <button type="button" onClick={() => setFutureOpen((v) => !v)} className="flex w-full items-center justify-between px-2 pb-1 text-[10.5px] font-semibold tracking-wider text-sidebar-muted uppercase hover:text-white cursor-pointer" aria-expanded={futureOpen}>
           Future Modules
@@ -128,12 +157,12 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
       </div>
       <div className="mx-3 mb-3 rounded-lg border border-sidebar-border bg-sidebar-accent/60 px-3 py-2 text-[11.5px] leading-snug text-sidebar-foreground">
         <div className="flex items-center gap-1.5 font-semibold text-white">
-          <Sparkles className="size-3.5 text-[#9be3d9]" /> Central Order System
+          <Sparkles className="size-3.5 text-[#9be3d9]" /> Logistics Operations
         </div>
-        Messenger, phone, Facebook and portal orders all land here.
+        Bookings from Messenger, phone and Facebook → trips, deliveries, backhaul and collections.
       </div>
       <NavLinks onNavigate={onNavigate} />
-      <div className="border-t border-sidebar-border px-4 py-3 text-[11px] text-sidebar-muted">Lucena Fresh Trading & Logistics · Phase 1</div>
+      <div className="border-t border-sidebar-border px-4 py-3 text-[11px] text-sidebar-muted">Lucena Fresh Trading & Logistics · Phase 1 — Logistics</div>
     </div>
   );
 }
@@ -149,7 +178,7 @@ export function RoleSwitcher({ compact }: { compact?: boolean }) {
     const m = ROLE_META[r];
     toast.success(`Switched to ${m.label} view`, { description: m.description });
     if (r === "driver" || r === "customer") router.push(m.home);
-    else if (!canAccess(r, pathname) || pathname.startsWith("/driver") || !pathname.match(/^\/(command-center|dashboard|orders|customers|leads|dispatch|trips|deliveries|backhaul|catalog|inventory|procurement|purchase-orders|suppliers|accounts-receivable|payments|expenses|trucks|drivers|reports|settings|notifications|future)/)) router.push(m.home);
+    else if (!canAccess(r, pathname) || !INTERNAL_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) router.push(m.home);
   };
   const initials = actorFor(role)
     .split(" ")
@@ -205,7 +234,7 @@ export function DemoBadge() {
       <PopoverContent align="end" className="w-80 text-sm">
         <div className="font-semibold">You are viewing demo data</div>
         <p className="mt-1 text-muted-foreground">
-          All customers, prices, trips and balances are fictional and generated for Lucena Fresh Trading & Logistics. The demo clock is fixed at <b>Fri, Sep 25, 2026 · 7:48 AM</b>. Changes you make are saved in this browser only.
+          All customers, freight rates, trips and balances are fictional and generated for Lucena Fresh Trading & Logistics. The demo clock is fixed at <b>Fri, Sep 25, 2026 · 7:48 AM</b>. Changes you make are saved in this browser only.
         </p>
         <Button
           variant="outline"
@@ -284,7 +313,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Search className="size-4 shrink-0" />
             <span className="truncate">
               <span className="sm:hidden">Search</span>
-              <span className="hidden sm:inline">Search orders, customers, trips, invoices…</span>
+              <span className="hidden sm:inline">Search jobs, trips, customers, invoices…</span>
             </span>
             <kbd className="ml-auto hidden rounded border bg-card px-1.5 text-[10px] font-medium sm:inline">Ctrl K</kbd>
           </button>

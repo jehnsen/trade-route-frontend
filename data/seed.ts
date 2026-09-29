@@ -1,42 +1,68 @@
 /**
- * TradeLoop demo data generator.
+ * Trading module demo data (Phase 2 preview): product sales orders, purchase orders,
+ * inventory batches and sales payments.
  *
- * Builds 30 days of operating history plus today's (Fri, Sep 25 2026) live operations and
- * tomorrow's dispatch plan. Everything is derived from the static reference data (customers,
- * products, suppliers, routes, trucks) with a seeded PRNG, so the output is deterministic and
- * internally consistent: orders ride on trips, trips haul backhaul POs, deliveries produce
- * invoices, and payments settle those invoices.
+ * The generator still simulates truck runs internally so order timing and stock levels look
+ * realistic, but those runs are NOT exported — trips, cargo and freight billing belong to the
+ * logistics model (see logistics-seed.ts). Exported orders and POs carry no trip links.
  */
 import { addDays, addMinutes, format, getDay, parseISO } from "date-fns";
 import type {
-  AppNotification,
   Customer,
   CustomerType,
-  Delivery,
-  Expense,
-  ExpenseCategory,
   InventoryBatch,
   Order,
   OrderEvent,
   OrderItem,
   OrderSource,
   OrderStatus,
-  Payment,
-  PaymentMethod,
   Product,
   PurchaseOrder,
   POItem,
   QuoteRequest,
-  Trip,
+  SalesPayment,
+  SalesPaymentMethod,
   Weekday,
 } from "@/types";
 import { NOW, TODAY, TOMORROW, staffById } from "./company";
 import { areaById, INTER_ISLAND_PARTNER, routeById } from "./areas";
 import { PRODUCTS, productById } from "./products";
-import { CUSTOMERS, customerById, STANDING_ORDERS } from "./customers";
+import { TRADING_CUSTOMERS as CUSTOMERS, customerById, STANDING_ORDERS } from "./customers";
 import { SUPPLIERS, supplierById } from "./suppliers";
-import { MAINTENANCE, TRUCKS, driverById, truckById } from "./fleet";
-import { buildInvoices, invoiceIdForOrder, isCreditTerms, itemLoadKg, orderBilledAmount, orderLoadKg, orderNetKg, termsDays } from "@/lib/calc";
+import { TRUCKS, driverById, truckById } from "./fleet";
+import { invoiceIdForOrder, isCreditTerms, itemLoadKg, orderBilledAmount, orderNetKg, termsDays } from "@/lib/calc";
+
+/** Internal-only truck run used to time orders; never exported. */
+interface SimTrip {
+  id: string;
+  date: string;
+  truckId: string;
+  driverId: string;
+  helperIds: string[];
+  routeId: string;
+  status: "Planned" | "Loading" | "In Transit" | "Completed";
+  departure: string;
+  actualDeparture?: string;
+  expectedReturn: string;
+  actualReturn?: string;
+  notes?: string;
+}
+interface SimDelivery {
+  id: string;
+  orderId: string;
+  tripId: string;
+  stopSeq: number;
+  status: string;
+  eta: string;
+  arrivedAt?: string;
+  completedAt?: string;
+  pod?: { receivedBy: string; signedAt: string; photoCount: number; remarks?: string };
+  failureReason?: string;
+}
+type SimOrder = Order & { tripId?: string };
+type SimPO = PurchaseOrder & { tripId?: string };
+type Trip = SimTrip;
+type Delivery = SimDelivery;
 
 // ─── Deterministic helpers ──────────────────────────────────────────────────
 function mulberry32(seed: number) {
@@ -76,12 +102,11 @@ const WEEKDAY_NAMES: Weekday[] = ["Monday", "Monday", "Tuesday", "Wednesday", "T
 const randTime = (iso: string, fromH: number, toH: number) => at(iso, `${pad(rint(fromH, toH), 2)}:${pad(rint(0, 59), 2)}`);
 
 // ─── Output collections ─────────────────────────────────────────────────────
-const orders: Order[] = [];
+const orders: SimOrder[] = [];
 const trips: Trip[] = [];
 const deliveries: Delivery[] = [];
-const purchaseOrders: PurchaseOrder[] = [];
-const expenses: Omit<Expense, "id">[] = [];
-const rawPayments: Omit<Payment, "id" | "receiptNo">[] = [];
+const purchaseOrders: SimPO[] = [];
+const rawPayments: Omit<SalesPayment, "id" | "receiptNo">[] = [];
 
 const orderSeq = new Map<string, number>();
 const poSeq = new Map<string, number>();
@@ -100,7 +125,6 @@ const DISPATCHER = "Noel Pascual";
 const WAREHOUSE = "Bong Esguerra";
 const PROCUREMENT = "Edwin Manalo";
 const ACCOUNTING = "Grace Lontoc";
-const DIESEL_PRICE = 63.2;
 
 // ─── Scheduling rules ───────────────────────────────────────────────────────
 const START = "2026-08-26";
@@ -127,6 +151,9 @@ const QTY_RANGE: Record<CustomerType, [number, number]> = {
   "Catering Company": [40, 140],
   Grocery: [60, 220],
   Retailer: [100, 350],
+  "Agri Trader": [200, 600],
+  Cooperative: [200, 600],
+  "General Merchandise": [100, 300],
 };
 const QTY_MULT: Record<string, number> = {
   "P-SUG-J": 0.35, "P-SUG-L": 0.42, "P-SUG-M": 0.45, "P-HIP-S": 0.45, "P-HIP-W": 0.4, "P-ALI-F": 0.15, "P-ALI-M": 0.15,
@@ -143,6 +170,9 @@ const PRICE_FACTOR: Record<CustomerType, [number, number]> = {
   "Catering Company": [1.02, 1.06],
   Grocery: [1.0, 1.04],
   Retailer: [1.0, 1.03],
+  "Agri Trader": [0.99, 1.02],
+  Cooperative: [0.99, 1.02],
+  "General Merchandise": [1.0, 1.03],
 };
 
 function qtyFor(c: Customer, p: Product) {
@@ -217,7 +247,7 @@ const sourceActor = (src: OrderSource, c: Customer) => {
   }
 };
 
-function baseOrder(c: Customer, id: string, date: string, items: OrderItem[], source: OrderSource, createdAt: string): Order {
+function baseOrder(c: Customer, id: string, date: string, items: OrderItem[], source: OrderSource, createdAt: string): SimOrder {
   const addr = c.addresses[0];
   const createdBy = sourceActor(source, c);
   return {
@@ -256,8 +286,8 @@ const confirmEvent = (o: Order, minutes: number): OrderEvent => ({
 // ─── Trip generation ────────────────────────────────────────────────────────
 interface TripPlan {
   trip: Trip;
-  orders: Order[];
-  pos: PurchaseOrder[];
+  orders: SimOrder[];
+  pos: SimPO[];
 }
 
 function tripId(date: string, truckId: string) {
@@ -355,7 +385,7 @@ function buildHistoricTrip(truckId: string, date: string, usedToday: Set<string>
     expectedReturn: at(date, route.expectedReturn),
   };
 
-  const tripOrders: Order[] = [];
+  const tripOrders: SimOrder[] = [];
   let t = plusMin(actualDeparture, areaById(route.outboundAreas[0]).driveMinutes + rint(-10, 25));
   let prevArea = route.outboundAreas[0];
   let seq = 0;
@@ -430,7 +460,7 @@ function buildBackhaulPOs(trip: Trip, returnAreas: string[], received: boolean, 
   const pool = SUPPLIERS.filter((s) => returnAreas.includes(s.pickupAreaId) && s.productIds.some((id) => BACKHAUL_PRODUCTS.has(id)));
   const ranked = shuffle(pool).sort((a, b) => (b.status === "preferred" ? 1 : 0) - (a.status === "preferred" ? 1 : 0));
   const suppliers = ranked.slice(0, Math.min(ranked.length, rint(1, 2)));
-  const pos: PurchaseOrder[] = [];
+  const pos: SimPO[] = [];
   let t = plusMin(afterTime, rint(25, 50));
   suppliers.forEach((s, idx) => {
     const share = suppliers.length === 1 ? 1 : idx === 0 ? 0.62 : 0.38;
@@ -470,7 +500,7 @@ function buildBackhaulPOs(trip: Trip, returnAreas: string[], received: boolean, 
 }
 
 /** Local supply POs: seafood and Quezon produce delivered to the Lucena bodega before loading. */
-function buildOutboundSupplyPOs(forDate: string, dayOrders: Order[], opts: { status: PurchaseOrder["status"]; shortfall?: Record<string, number> }) {
+function buildOutboundSupplyPOs(forDate: string, dayOrders: SimOrder[], opts: { status: PurchaseOrder["status"]; shortfall?: Record<string, number> }) {
   const need = new Map<string, number>();
   for (const o of dayOrders) {
     if (o.status === "Cancelled" || o.status === "Draft") continue;
@@ -493,7 +523,7 @@ function buildOutboundSupplyPOs(forDate: string, dayOrders: Order[], opts: { sta
     bySupplier.set(s.id, list);
   }
   const created = addDaysISO(forDate, -1);
-  const pos: PurchaseOrder[] = [];
+  const pos: SimPO[] = [];
   for (const [sid, items] of bySupplier) {
     const s = supplierById(sid);
     const arrival = randTime(forDate, 0, 2);
@@ -563,35 +593,7 @@ function buildPartnerOrder(customerId: string, date: string, itemSpec: [string, 
     o.history.push({ at: randTime(addDaysISO(date, 1), 18, 20), label: "Vessel departed Batangas Port", by: INTER_ISLAND_PARTNER.name });
   }
   orders.push(o);
-  expenses.push({ date, category: "Port / Shipping Fee", amount: o.deliveryFee, description: `Reefer freight to ${areaById(c.areaId).name} — ${o.id}`, orderId: o.id, paidTo: INTER_ISLAND_PARTNER.name, recordedBy: ACCOUNTING, receiptRef: `IRC-${rint(10000, 99999)}` });
   return o;
-}
-
-// ─── Trip expenses ──────────────────────────────────────────────────────────
-function tripExpenses(trip: Trip, tripOrders: Order[], mode: "full" | "partial-transit" | "loading") {
-  const route = routeById(trip.routeId);
-  const truck = truckById(trip.truckId);
-  const driver = driverById(trip.driverId);
-  const load = tripOrders.reduce((s, o) => s + orderLoadKg(o), 0);
-  const seafoodKg = tripOrders.reduce((s, o) => s + o.items.filter((i) => productById(i.productId).category === "seafood").reduce((a, i) => a + i.quantity, 0), 0);
-  const liters = Math.round((route.roundTripKm / truck.fuelEfficiencyKmPerL) * (1 + (load / truck.capacityKg) * 0.08));
-  const add = (category: ExpenseCategory, amount: number, description: string, paidTo: string) =>
-    expenses.push({ date: trip.date, category, amount: Math.round(amount), description, tripId: trip.id, truckId: trip.truckId, paidTo, recordedBy: ACCOUNTING, receiptRef: `CV-${yymmdd(trip.date)}-${rint(100, 999)}` });
-
-  add("Diesel", liters * DIESEL_PRICE, `${liters} L diesel @ ₱${DIESEL_PRICE.toFixed(2)} (demo rate)`, "Diversion Rd. Fuel Station, Lucena");
-  add("Ice", roundTo(seafoodKg * 3.2, 10), `${Math.round(seafoodKg / 25)} ice blocks, crushed`, "Dalahican Ice Plant");
-  add("Packaging", roundTo(seafoodKg * 1.4, 10), "Styro boxes, mesh sacks, packing tape", "Lucena Packaging Supply");
-  add("Loading Fee", 1200, "Bodega kargador (4 loaders)", "Bodega loaders");
-  if (mode === "loading") return;
-  add("Driver Allowance", 1200, `Trip allowance — ${driver.name}`, driver.name);
-  add("Helper Allowance", 1400, "2 helpers × ₱700", "Helpers");
-  add("Toll", route.tollFee + rint(-40, 60), "SLEX / Skyway / NLEX — Class 3 RFID", "Toll RFID reload");
-  if (mode === "partial-transit") return;
-  add("Meals", rint(900, 1300), "Driver & helpers meals", "Various");
-  const port = route.outboundAreas.includes("navotas");
-  add("Parking", port ? 350 : rint(100, 250), port ? "Navotas Fish Port entry & parking" : "Street parking / market entry", port ? "Navotas Fish Port Complex" : "Various");
-  add("Unloading Fee", port ? rint(1800, 2600) : rint(900, 1500), port ? "Fish port kargador fees" : "Market kargador fees", "Kargador");
-  if (chance(0.2)) add("Miscellaneous", pick([250, 300, 350, 400]), pick(["Truck wash", "Vulcanizing (spare tire)", "Rope and tarpaulin replacement"]), "Various");
 }
 
 // ─── HISTORY: Aug 26 → Sep 24 ───────────────────────────────────────────────
@@ -599,13 +601,12 @@ const historicPlans: TripPlan[] = [];
 for (let date = START; date < TODAY; date = addDaysISO(date, 1)) {
   if (weekdayOf(date) === 0) continue;
   const usedToday = new Set<string>();
-  const dayOrders: Order[] = [];
+  const dayOrders: SimOrder[] = [];
   for (const truck of TRUCKS) {
     if (TRUCK_DOWN[truck.id].includes(date)) continue;
     const plan = buildHistoricTrip(truck.id, date, usedToday);
     historicPlans.push(plan);
     dayOrders.push(...plan.orders);
-    tripExpenses(plan.trip, plan.orders, "full");
   }
   buildOutboundSupplyPOs(date, dayOrders, { status: "Received" });
   buildPickupOrders(date);
@@ -622,7 +623,7 @@ const OPENING: [customerId: string, date: string, lines: [string, number, number
   ["CUS-026", "2026-07-28", [["P-SUG-M", 70, 410], ["P-PUS", 40, 285]], 0],
   ["CUS-018", "2026-08-14", [["P-TAH", 300, 112], ["P-SUG-M", 40, 405]], 10000, "2026-09-18"],
 ];
-const openingOrders: { o: Order; paid: number; paidOn?: string }[] = [];
+const openingOrders: { o: SimOrder; paid: number; paidOn?: string }[] = [];
 for (const [cid, date, lines, paid, paidOn] of OPENING) {
   const c = customerById(cid)!;
   const o = baseOrder(c, nextOrderId(date), date, lines.map(([productId, quantity, unitPrice]) => ({ productId, quantity, unitPrice })), "Salesperson", at(addDaysISO(date, -1), "15:00"));
@@ -665,7 +666,7 @@ interface Spec {
   date?: string;
   window?: string;
 }
-function scripted(date: string, s: Spec): Order {
+function scripted(date: string, s: Spec): SimOrder {
   const c = customerById(s.customerId)!;
   const o = baseOrder(c, `FR-${yymmdd(date)}-${s.no}`, s.date ?? date, s.lines.map(([productId, quantity, unitPrice]) => ({ productId, quantity, unitPrice })), s.source, s.createdAt);
   if (s.fee !== undefined) o.deliveryFee = s.fee;
@@ -697,7 +698,7 @@ const t01Specs: (Spec & { eta: string; done?: string; arrived?: string })[] = [
   { no: "007", customerId: "CUS-008", lines: [["P-SUG-L", 100, 455], ["P-TAL", 50, 140], ["P-HIP-S", 150, 305]], source: "Repeat Order", status: "Out for Delivery", createdAt: "2026-09-22T06:00", eta: "10:45", notes: "Friday standing order (Sugpo 100 kg + Talaba 50 kg) plus 150 kg hipon added by phone." },
   { no: "008", customerId: "CUS-009", lines: [["P-NIY", 2000, 24], ["P-SAB", 800, 32]], source: "Phone", status: "Out for Delivery", createdAt: "2026-09-24T10:05", eta: "11:30" },
 ];
-const t01Orders: Order[] = [];
+const t01Orders: SimOrder[] = [];
 t01Specs.forEach((s, idx) => {
   const o = scripted(TODAY, s);
   o.tripId = T01;
@@ -725,7 +726,7 @@ const t02Specs: (Spec & { eta: string })[] = [
   { no: "012", customerId: "CUS-026", lines: [["P-SUG-M", 100, 410], ["P-PUS", 60, 285], ["P-BAN-XL", 120, 218]], fee: 1000, source: "Phone", status: "Preparing", createdAt: "2026-09-24T11:48", eta: "14:15", notes: "For a Saturday wedding in Imus — deliver before 3:00 PM." },
   { no: "014", customerId: "CUS-027", lines: [["P-SUG-L", 250, 450], ["P-HIP-S", 180, 300], ["P-BAN", 300, 182]], source: "Salesperson", status: "Preparing", createdAt: "2026-09-24T13:10", eta: "14:40" },
 ];
-const t02Orders: Order[] = [];
+const t02Orders: SimOrder[] = [];
 t02Specs.forEach((s, idx) => {
   const o = scripted(TODAY, s);
   o.tripId = T02;
@@ -784,7 +785,7 @@ const tomorrowSpecs: (Spec & { trip?: string; eta?: string })[] = [
   { no: "021", customerId: "CUS-037", lines: [["P-ONR", 150, 110], ["P-GAR", 60, 130], ["P-POT", 100, 80]], source: "Customer Portal", status: "Pending Confirmation", createdAt: "2026-09-25T06:12" },
   { no: "022", customerId: "CUS-036", lines: [["P-ONR", 200, 108], ["P-TOM", 150, 60], ["P-CAB", 100, 58]], source: "Phone", status: "Draft", createdAt: "2026-09-25T07:30", notes: "Consuelo to confirm quantities by 9 AM." },
 ];
-const tomorrowOrders: Order[] = [];
+const tomorrowOrders: SimOrder[] = [];
 for (const s of tomorrowSpecs) {
   const o = scripted(TOMORROW, s);
   if (s.trip) {
@@ -817,9 +818,9 @@ buildOutboundSupplyPOs(TODAY, [...t01Orders, ...t02Orders, ...orders.filter((o) 
 const tomorrowSupply = buildOutboundSupplyPOs(TOMORROW, tomorrowOrders.filter((o) => o.status === "Confirmed" || o.status === "Pending Confirmation"), { status: "Confirmed", shortfall: { "P-SUG-L": 240 } });
 tomorrowSupply.forEach((po) => (po.notes = po.items.some((i) => i.productId === "P-SUG-L") ? "Coop confirmed only part of the Large sugpo volume — harvest short due to pond draining schedule." : undefined));
 
-function scriptedPO(no: string, supplierId: string, items: [string, number, number][], extra: Partial<PurchaseOrder>): PurchaseOrder {
+function scriptedPO(no: string, supplierId: string, items: [string, number, number][], extra: Partial<SimPO>): SimPO {
   const s = supplierById(supplierId);
-  const po: PurchaseOrder = {
+  const po: SimPO = {
     id: `PO-260925-${no}`,
     supplierId,
     items: items.map(([productId, quantity, unitCost]) => ({ productId, quantity, unitCost })),
@@ -836,7 +837,7 @@ function scriptedPO(no: string, supplierId: string, items: [string, number, numb
   return po;
 }
 // Pad today's series so the numbered backhaul POs line up with what suppliers were told by phone.
-const fillers: [string, [string, number, number][], Partial<PurchaseOrder>][] = [
+const fillers: [string, [string, number, number][], Partial<SimPO>][] = [
   ["SUP-011", [["P-SIL", 60, 92]], { status: "Draft", pickupDate: "2026-09-26", deliveredBySupplier: true, notes: "Waiting for Lucban harvest confirmation." }],
   ["SUP-015", [["P-ONR", 1000, 80]], { status: "Cancelled", notes: "Cancelled — Mang Tony's stock sold out before our truck could reach Divisoria." }],
   ["SUP-013", [["P-ONR", 1500, 82], ["P-GAR-N", 200, 150]], { status: "Draft", pickupDate: "2026-09-29", notes: "For Tuesday's Manila return leg." }],
@@ -848,35 +849,16 @@ for (const [sid, items, extra] of fillers) {
   if (fillNo > 13) break;
   scriptedPO(pad(fillNo++), sid, items, extra);
 }
-const PO014 = scriptedPO("014", "SUP-012", [["P-ONR", 1500, 85], ["P-GAR", 600, 90]], { status: "Ready for Pickup", tripId: T01, pickupEta: at(TODAY, "12:30"), createdAt: "2026-09-24T16:10", notes: "Ready at Bodega 7 by 12:00 NN. Pay via bank transfer on pickup." });
+scriptedPO("014", "SUP-012", [["P-ONR", 1500, 85], ["P-GAR", 600, 90]], { status: "Ready for Pickup", tripId: T01, pickupEta: at(TODAY, "12:30"), createdAt: "2026-09-24T16:10", notes: "Ready at Bodega 7 by 12:00 NN. Pay via bank transfer on pickup." });
 scriptedPO("015", "SUP-014", [["P-ONR", 300, 86], ["P-GAR", 100, 92], ["P-GIN", 500, 90]], { status: "Confirmed", tripId: T01, pickupEta: at(TODAY, "13:30"), createdAt: "2026-09-24T17:05" });
-const PO016 = scriptedPO("016", "SUP-017", [["P-ONR", 1200, 83]], { status: "Confirmed", pickupAreaId: "valenzuela", createdAt: "2026-09-25T06:45", notes: "Grower drop-off at Paso de Blas, 11:00 AM. Not yet assigned to a return trip." });
+scriptedPO("016", "SUP-017", [["P-ONR", 1200, 83]], { status: "Confirmed", pickupAreaId: "valenzuela", createdAt: "2026-09-25T06:45", notes: "Grower drop-off at Paso de Blas, 11:00 AM. Not yet assigned to a return trip." });
 scriptedPO("017", "SUP-020", [["P-POT", 800, 58], ["P-CAR", 500, 54], ["P-CAB", 600, 36], ["P-GIN", 400, 86]], { status: "Confirmed", tripId: T02, pickupEta: at(TODAY, "17:30"), createdAt: "2026-09-25T06:50" });
 scriptedPO("018", "SUP-025", [["P-ONR", 1470, 87], ["P-ONW", 800, 81], ["P-GAR", 700, 90]], { status: "Sent", tripId: T02, pickupEta: at(TODAY, "16:30"), createdAt: "2026-09-25T07:05" });
 // Tomorrow's Navotas/Valenzuela return
 scriptedPO("019", "SUP-012", [["P-ONR", 1200, 85], ["P-GIN", 400, 92]], { status: "Sent", pickupDate: TOMORROW, tripId: D1, pickupEta: at(TOMORROW, "12:30"), createdAt: "2026-09-25T07:25" });
 
-// ─── Trip expenses for live trips ───────────────────────────────────────────
-tripExpenses(trips.find((t) => t.id === T01)!, t01Orders, "partial-transit");
-tripExpenses(trips.find((t) => t.id === T02)!, t02Orders, "loading");
-
-// ─── Maintenance expenses ───────────────────────────────────────────────────
-for (const m of MAINTENANCE) {
-  if (m.date < START) continue;
-  expenses.push({
-    date: m.date,
-    category: m.type === "Repair" ? "Repairs" : m.type === "Registration" ? "Miscellaneous" : "Maintenance",
-    amount: m.cost,
-    description: `${truckById(m.truckId).code}: ${m.description}`,
-    truckId: m.truckId,
-    paidTo: m.shop,
-    recordedBy: ACCOUNTING,
-    receiptRef: `SI-${rint(10000, 99999)}`,
-  });
-}
-
 // ─── Payments ───────────────────────────────────────────────────────────────
-const maskRef = (method: PaymentMethod) => {
+const maskRef = (method: SalesPaymentMethod) => {
   const tail = pad(rint(0, 9999), 4);
   switch (method) {
     case "GCash":
@@ -895,7 +877,7 @@ const maskRef = (method: PaymentMethod) => {
       return `Cash — OR copy on file`;
   }
 };
-function pay(o: Order, amount: number, date: string, method: PaymentMethod, notes?: string) {
+function pay(o: SimOrder, amount: number, date: string, method: SalesPaymentMethod, notes?: string) {
   if (date > NOW || amount <= 0) return;
   rawPayments.push({ customerId: o.customerId, invoiceId: invoiceIdForOrder(o.id), orderId: o.id, amount: Math.round(amount), method, reference: maskRef(method), date, recordedBy: ACCOUNTING, notes });
 }
@@ -913,7 +895,7 @@ for (const o of orders) {
 
   if (o.paymentTerms === "COD") {
     const when = o.deliveredAt ?? at(issue, "10:00");
-    const method: PaymentMethod = o.fulfillment === "pickup" ? (chance(0.8) ? "Cash" : "GCash") : chance(0.55) ? "COD" : chance(0.78) ? "GCash" : "Maya";
+    const method: SalesPaymentMethod = o.fulfillment === "pickup" ? (chance(0.8) ? "Cash" : "GCash") : chance(0.55) ? "COD" : chance(0.78) ? "GCash" : "Maya";
     if (c.paymentBehavior === "average" && chance(0.15)) {
       const first = Math.round((total * 0.7) / 100) * 100;
       pay(o, first, when, method, collector && method === "COD" ? `Partial — remitted by ${collector}` : "Partial payment");
@@ -929,7 +911,7 @@ for (const o of orders) {
     const offset = { prompt: rint(-3, 1), average: rint(-1, 7), slow: rint(4, 20), delinquent: rint(14, 48) }[c.paymentBehavior];
     let payDate = addDaysISO(due, offset);
     if (payDate <= issue) payDate = addDaysISO(issue, 1);
-    const method: PaymentMethod = chance(0.55) ? "Bank Transfer" : chance(0.6) ? "Check" : "GCash";
+    const method: SalesPaymentMethod = chance(0.55) ? "Bank Transfer" : chance(0.6) ? "Check" : "GCash";
     const when = at(payDate, `${pad(rint(9, 16), 2)}:${pad(rint(0, 59), 2)}`);
     if (c.paymentBehavior === "delinquent" && chance(0.5)) {
       pay(o, Math.round((total * 0.5) / 1000) * 1000, when, "Credit Settlement", "Partial settlement — balance promised next week");
@@ -940,33 +922,16 @@ for (const o of orders) {
 }
 rawPayments.sort((a, b) => a.date.localeCompare(b.date));
 const paySeq = new Map<string, number>();
-const payments: Payment[] = rawPayments.map((p, i) => {
+const payments: SalesPayment[] = rawPayments.map((p, i) => {
   const day = p.date.slice(0, 10);
   const n = (paySeq.get(day) ?? 0) + 1;
   paySeq.set(day, n);
-  return { ...p, id: `PAY-${yymmdd(day)}-${pad(n)}`, receiptNo: `OR-${pad(4100 + i, 6)}` };
+  return { ...p, id: `SP-${yymmdd(day)}-${pad(n)}`, receiptNo: `SR-${pad(4100 + i, 6)}` };
 });
 
-// ─── Trip odometers & final sort ────────────────────────────────────────────
-trips.sort((a, b) => a.departure.localeCompare(b.departure) || a.truckId.localeCompare(b.truckId));
-for (const truck of TRUCKS) {
-  const own = trips.filter((t) => t.truckId === truck.id && (t.status === "Completed" || t.status === "In Transit"));
-  let odo = truck.mileageKm - own.reduce((s, t) => s + (t.status === "Completed" ? routeById(t.routeId).roundTripKm : 0), 0) - 168;
-  for (const t of own) {
-    t.odometerStart = odo;
-    if (t.status === "Completed") {
-      odo += routeById(t.routeId).roundTripKm + rint(-6, 14);
-      t.odometerEnd = odo;
-    }
-  }
-}
+// ─── Final sort ─────────────────────────────────────────────────────────────
 orders.sort((a, b) => b.id.localeCompare(a.id));
 purchaseOrders.sort((a, b) => b.id.localeCompare(a.id));
-
-const finalExpenses: Expense[] = expenses
-  .sort((a, b) => a.date.localeCompare(b.date))
-  .map((e, i) => ({ ...e, id: `EXP-${pad(i + 1, 5)}` }))
-  .reverse();
 
 // ─── Inventory (current state at 07:48) ─────────────────────────────────────
 const inventory: InventoryBatch[] = [];
@@ -1022,41 +987,25 @@ const quoteRequests: QuoteRequest[] = [
   { id: "RFQ-0417", businessName: "Makati Hotel Group Purchasing", contactName: "Andrea Lim", phone: "0917 802 1156", businessType: "Hotel", productId: "P-SUG-J", quantity: 500, unit: "kg/week", frequency: "3 deliveries/week", deliveryArea: "Makati City", preferredDate: "2026-10-05", status: "Under Review", createdAt: "2026-09-17T11:10" },
 ];
 
-// ─── Notifications (computed from the generated data) ───────────────────────
-const invoices = buildInvoices(orders, payments);
-const overdueByCustomer = new Map<string, number>();
-for (const inv of invoices) if (inv.daysOverdue > 0) overdueByCustomer.set(inv.customerId, (overdueByCustomer.get(inv.customerId) ?? 0) + inv.balance);
-const rjmOverdue = overdueByCustomer.get("CUS-002") ?? 0;
-const t02Return = purchaseOrders.filter((p) => p.tripId === T02).reduce((s, p) => s + p.items.reduce((a, i) => a + i.quantity * productById(i.productId).unitWeightKg * productById(i.productId).loadFactor, 0), 0);
-const sugDemand = tomorrowOrders.filter((o) => o.status !== "Draft").reduce((s, o) => s + o.items.filter((i) => i.productId === "P-SUG-L").reduce((a, i) => a + i.quantity, 0), 0);
-const sugIncoming = tomorrowSupply.reduce((s, po) => s + po.items.filter((i) => i.productId === "P-SUG-L").reduce((a, i) => a + i.quantity, 0), 0);
-const sugOnHand = inventory.filter((b) => b.productId === "P-SUG-L").reduce((s, b) => s + b.onHand, 0) - t02Orders.reduce((s, o) => s + o.items.filter((i) => i.productId === "P-SUG-L").reduce((a, i) => a + i.quantity, 0), 0) - 0;
-
-const notifications: AppNotification[] = [
-  { id: "N-01", kind: "order", title: "Order needs confirmation", body: `Order ${cebu021.id} (Cebu Seaboard Distributors) needs confirmation and a 50% down payment before reefer booking.`, at: "2026-09-25T06:56", href: `/orders/${cebu021.id}`, severity: "warning", read: false, roles: ["owner", "sales", "accounting"] },
-  { id: "N-02", kind: "trip", title: "Truck 01 departed Lucena", body: `${T01} left the bodega at 3:34 AM with 9 drops for Navotas and Valenzuela.`, at: "2026-09-25T03:34", href: `/trips/${T01}`, severity: "info", read: true, roles: ["owner", "dispatcher"] },
-  { id: "N-03", kind: "finance", title: "Overdue balance", body: `Customer RJM Seafood Trading has ₱${rjmOverdue.toLocaleString("en-PH")} overdue.`, at: "2026-09-25T07:00", href: "/customers/CUS-002", severity: "critical", read: false, roles: ["owner", "accounting", "sales"] },
-  { id: "N-04", kind: "inventory", title: "Sugpo short for tomorrow", body: `Sugpo (Large) stock below confirmed demand by ${Math.max(0, sugDemand - sugIncoming - Math.max(0, sugOnHand))} kg for Sep 26 dispatch.`, at: "2026-09-25T07:12", href: "/procurement", severity: "warning", read: false, roles: ["owner", "procurement", "warehouse"] },
-  { id: "N-05", kind: "backhaul", title: "Unused return capacity", body: `Truck 02 has ${(truckById("TRK-02").capacityKg - Math.round(t02Return)).toLocaleString("en-PH")} kg unused return capacity on ${T02}.`, at: "2026-09-25T07:20", href: "/backhaul", severity: "info", read: false, roles: ["owner", "procurement", "dispatcher"] },
-  { id: "N-06", kind: "procurement", title: "PO ready for pickup", body: `${PO014.id} is ready for pickup in Valenzuela (Valenzuela Produce Depot, Bodega 7).`, at: "2026-09-25T07:31", href: `/purchase-orders?po=${PO014.id}`, severity: "success", read: false, roles: ["owner", "procurement", "dispatcher", "driver"] },
-  { id: "N-07", kind: "trip", title: "First drop delivered", body: "FR-260925-001 delivered to Navotas Prime Seafood Supply — POD uploaded by Joel Mendoza.", at: "2026-09-25T07:29", href: "/orders/FR-260925-001", severity: "success", read: false, roles: ["owner", "dispatcher", "sales"] },
-  { id: "N-08", kind: "trip", title: "Late delivery risk", body: "Truck 01 is running ~20 min behind. Kuya Boyet's Fish Stall (receiving until 9:00 AM) is at risk.", at: "2026-09-25T07:40", href: `/trips/${T01}`, severity: "warning", read: false, roles: ["owner", "dispatcher", "sales"] },
-  { id: "N-09", kind: "order", title: "Credit hold", body: "FR-260926-006 (RJM Seafood Trading) is on credit hold pending approval.", at: "2026-09-25T07:06", href: "/orders/FR-260926-006", severity: "warning", read: false, roles: ["owner", "accounting", "sales"] },
-  { id: "N-10", kind: "lead", title: "New Facebook lead", body: "Sta. Cruz Laguna Gulayan asked about red onion and garlic (≈400 kg/week).", at: "2026-09-25T07:02", href: "/leads", severity: "info", read: false, roles: ["owner", "sales"] },
-  { id: "N-11", kind: "order", title: "New portal order", body: "Pagbilao Mini-Grocery submitted FR-260926-021 through the customer portal.", at: "2026-09-25T06:12", href: "/orders/FR-260926-021", severity: "info", read: true, roles: ["owner", "sales"] },
-  { id: "N-12", kind: "backhaul", title: "Backhaul opportunity", body: `${PO016.id} (1,200 kg red onion) can be assigned to Truck 01 without exceeding return capacity.`, at: "2026-09-25T07:22", href: "/backhaul", severity: "info", read: false, roles: ["owner", "procurement", "dispatcher"] },
-];
+// ─── Export: strip the simulated truck runs from product records ────────────
+const TRIP_EVENT = /TRIP-|^Loaded to Truck|^Loading started/;
+function toOrder(o: SimOrder): Order {
+  const { tripId, ...rest } = o;
+  void tripId;
+  return { ...rest, history: rest.history.filter((e) => !TRIP_EVENT.test(e.label)) };
+}
+function toPO(p: SimPO): PurchaseOrder {
+  const { tripId, ...rest } = p;
+  void tripId;
+  return rest;
+}
 
 export const SEED = {
-  orders,
-  trips,
-  deliveries,
-  purchaseOrders,
-  payments,
-  expenses: finalExpenses,
+  orders: orders.map(toOrder),
+  purchaseOrders: purchaseOrders.map(toPO),
+  salesPayments: payments,
   inventory,
   quoteRequests,
-  notifications,
   lifetimeBaseline: LIFETIME_BASELINE,
 };
 

@@ -111,6 +111,11 @@
   html {
     -webkit-text-size-adjust: 100%;
   }
+  /* Single-column grids must not grow past their container because of truncated (nowrap) text.
+     Explicit grid-cols-* utilities (utilities layer) still override this. */
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv11", "ss01";
