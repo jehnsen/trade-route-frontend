@@ -35,6 +35,7 @@ import {
   Gavel,
   Container,
   Waypoints,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/types";
@@ -59,7 +60,10 @@ const ALL: Role[] = ["owner", "sales", "dispatcher", "procurement", "warehouse",
 export const NAV: NavSection[] = [
   {
     label: "Overview",
-    items: [{ href: "/command-center", label: "Command Center", icon: Gauge, roles: ["owner", "dispatcher", "accounting"] }],
+    items: [
+      { href: "/command-center", label: "Command Center", icon: Gauge, roles: ["owner", "dispatcher", "accounting"] },
+      { href: "/workflow", label: "How It Works", icon: Workflow, roles: ALL },
+    ],
   },
   {
     label: "Sales & CRM",
