@@ -145,7 +145,7 @@ function SidebarLink({
               danger
                 ? "bg-[oklch(0.56_0.2_25)] text-white"
                 : active
-                  ? "bg-white/25 text-white"
+                  ? "bg-black/10 text-[#1c3024]"
                   : "bg-white/10 text-sidebar-foreground",
             )}
           >
@@ -322,7 +322,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
-      <div className="flex h-[76px] shrink-0 items-center px-6">
+      <div className="flex h-[68px] shrink-0 items-center px-6">
         <Link href="/command-center" onClick={onNavigate}>
           <Logo className="gap-2.5 [&_svg_rect]:fill-[#c9ecaa] [&_svg_path]:stroke-[#263e36] [&_svg_circle]:fill-[#263e36] [&>span>span:first-child]:text-[21px] [&>span>span:last-child]:hidden" />
         </Link>
@@ -560,7 +560,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </SheetContent>
       </Sheet>
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 flex h-[76px] items-center gap-3 border-b bg-card/95 px-4 backdrop-blur-sm sm:px-7 lg:px-8 no-print">
+        <header className="sticky top-0 z-20 flex h-[68px] items-center gap-3 border-b bg-card/95 px-4 backdrop-blur-sm sm:px-7 lg:px-8 no-print">
           <Button
             variant="ghost"
             size="icon"

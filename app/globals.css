@@ -131,18 +131,18 @@
   scrollbar-width: thin;
 }
 
-/* Logistics workspace: ink navy, warm paper, and a high-visibility lime accent. */
+/* Logistics workspace: ink navy, cool paper, and restrained fleet green. */
 .admin-shell {
-  --background: #f5f6f8;
-  --foreground: #1c283a;
-  --card-foreground: #1c283a;
-  --primary: #263e36;
+  --background: #f4f6f8;
+  --foreground: #1d2c3d;
+  --card-foreground: #1d2c3d;
+  --primary: #285b4d;
   --primary-foreground: #ffffff;
   --muted: #f0f2f5;
-  --muted-foreground: #6a7585;
-  --accent: #eef4e9;
-  --accent-foreground: #304a27;
-  --border: #e5e8ed;
+  --muted-foreground: #667587;
+  --accent: #eaf2ee;
+  --accent-foreground: #285b4d;
+  --border: #e0e6eb;
   --input: #d9dfe5;
   --ring: #65824e;
   --sidebar: #151f30;
@@ -158,8 +158,8 @@
 
 .admin-shell [data-slot="card"] {
   min-width: 0;
-  border-radius: 16px;
-  box-shadow: 0 3px 8px -5px rgb(25 38 56 / 7%);
+  border-radius: 12px;
+  box-shadow: 0 2px 4px -2px rgb(25 38 56 / 6%);
 }
 
 .admin-shell .page-header {
@@ -260,6 +260,284 @@
 
 .dashboard-metric:hover {
   box-shadow: 0 4px 16px -6px rgb(25 48 40 / 12%);
+}
+
+/* Dispatch uses container queries so truck cards follow the available workspace. */
+.dispatch-workspace .page-header {
+  margin-bottom: 1.75rem;
+}
+
+.dispatch-workspace .page-header h1 {
+  font-size: clamp(1.75rem, 2.5vw, 2rem);
+}
+
+.dispatch-summary {
+  box-shadow: 0 2px 4px -2px rgb(25 38 56 / 4%);
+}
+
+.dispatch-metric {
+  border-inline-start: 1px solid var(--border);
+}
+
+.dispatch-metric > div:first-child {
+  color: var(--muted-foreground);
+}
+
+.dispatch-metric-featured {
+  border: 0;
+  background: #203a3c;
+  color: #fff;
+}
+
+.dispatch-metric-featured > div:first-child {
+  color: #d2e6df;
+}
+
+.dispatch-dates [data-state="active"] {
+  background: #203a3c;
+  color: white;
+  box-shadow: 0 1px 3px #203a3c20;
+}
+
+.dispatch-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.dispatch-fleet {
+  container-type: inline-size;
+}
+
+.dispatch-truck {
+  border-top: 3px solid #405e58;
+}
+
+.dispatch-route {
+  background-color: #f5f8f6;
+  background-image: radial-gradient(#436e5714 0.7px, transparent 0.7px);
+  background-size: 10px 10px;
+  border-color: #e2eae5;
+}
+
+.dispatch-itinerary {
+  min-height: 2.75em;
+}
+
+.dispatch-job-group {
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.dispatch-job-group:hover {
+  border-color: #b9c9c3;
+  box-shadow: 0 4px 12px -6px #203a3c25;
+}
+
+.dispatch-empty-truck {
+  min-height: 240px;
+  background: linear-gradient(145deg, white, #f3f7f5);
+}
+
+@container (min-width: 620px) {
+  .dispatch-trucks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .dispatch-board {
+    grid-template-columns: minmax(280px, 0.82fr) minmax(0, 2fr);
+  }
+}
+
+@media (max-width: 1023px) {
+  .dispatch-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .dispatch-metric:nth-child(3) {
+    border-inline-start: 0;
+  }
+}
+
+/* Backhaul keeps daily planning separate from historical performance. */
+.backhaul-workspace {
+  container-type: inline-size;
+}
+
+.backhaul-workspace .page-header h1 {
+  font-size: clamp(1.75rem, 2.5vw, 2rem);
+}
+
+.backhaul-metric {
+  border-inline-start: 1px solid var(--border);
+}
+
+.backhaul-metric > div:first-child {
+  color: var(--muted-foreground);
+}
+
+.backhaul-metric-featured {
+  border: 0;
+  background: #203a3c;
+  color: #fff;
+}
+
+.backhaul-metric-featured > div:first-child {
+  color: #d2e6df;
+}
+
+.backhaul-view-tabs [data-state="active"] {
+  border-color: var(--border);
+  color: var(--primary);
+}
+
+.backhaul-dates [aria-pressed="true"] {
+  background: #203a3c;
+  color: #fff;
+}
+
+.backhaul-dates [aria-pressed="false"] {
+  color: var(--muted-foreground);
+}
+
+.backhaul-dates [aria-pressed="false"]:hover {
+  background: var(--muted);
+}
+
+.backhaul-count {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #fff;
+  padding: 2px 7px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.backhaul-trip {
+  border-top: 3px solid #405e58;
+}
+
+.backhaul-manifest summary::-webkit-details-marker {
+  display: none;
+}
+
+.backhaul-manifest[open] .manifest-chevron {
+  transform: rotate(180deg);
+}
+
+/* Recharts supplies inline series colors; the pale empty-space label needs ink. */
+.backhaul-workspace .recharts-legend-item-text {
+  color: var(--muted-foreground) !important;
+}
+
+@container (min-width: 740px) {
+  .backhaul-trip-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .backhaul-match {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.65fr) auto;
+  }
+}
+
+@media (max-width: 1023px) {
+  .backhaul-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .backhaul-metric:nth-child(3) {
+    border-inline-start: 0;
+  }
+}
+
+/* Trips show operational cards separately from the searchable trip register. */
+.trips-workspace {
+  container-type: inline-size;
+}
+
+.trips-workspace .page-header h1 {
+  font-size: clamp(1.75rem, 2.5vw, 2rem);
+}
+
+.trip-metric {
+  border-inline-start: 1px solid var(--border);
+}
+
+.trip-metric > div:first-child {
+  color: var(--muted-foreground);
+}
+
+.trip-metric-featured {
+  border: 0;
+  background: #203a3c;
+  color: #fff;
+}
+
+.trip-metric-featured > div:first-child {
+  color: #d2e6df;
+}
+
+.trip-view-tabs [data-state="active"] {
+  border-color: var(--border);
+  color: var(--primary);
+}
+
+.trip-view-count {
+  min-width: 20px;
+  border-radius: 4px;
+  background: var(--muted);
+  padding: 1px 5px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trip-schedule-card {
+  border-top: 3px solid #405e58;
+}
+
+.trip-financials summary::-webkit-details-marker {
+  display: none;
+}
+
+.trip-financials[open] .financials-chevron {
+  transform: rotate(180deg);
+}
+
+.trip-register th {
+  background: #f8f9fb;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trip-register td {
+  padding-block: 16px;
+  font-size: 12px;
+}
+
+@container (min-width: 740px) {
+  .trip-schedule-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1023px) {
+  .trip-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .trip-metric:nth-child(3) {
+    border-inline-start: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

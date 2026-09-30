@@ -1,23 +1,26 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { format, parseISO, subDays } from "date-fns";
 import { toast } from "sonner";
-import { ArrowLeftRight, ArrowRight, Building2, CheckCircle2, Handshake, Lightbulb, MapPin, Plus, Route as RouteIcon, Undo2 } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, BarChart3, Building2, CalendarDays, CheckCircle2, Handshake, PackagePlus, Plus, Route as RouteIcon, Truck, Undo2 } from "lucide-react";
 import type { LogisticsJob, Trip } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { useBoardMatches, useCapacityViews, useCustomerMap, useTripMetrics } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
 import { areaName, returnLegName, routeById } from "@/data/areas";
-import { truckById, driverById } from "@/data/fleet";
-import { canAddReturnCargo, jobTotal, truckLocation, type TripMetrics } from "@/lib/logistics";
+import { truckById } from "@/data/fleet";
+import { canAddReturnCargo, jobTotal, type TripMetrics } from "@/lib/logistics";
 import { isGoodMatch } from "@/lib/load-board";
-import { fmtDateShort, fmtDay, fmtTime, kg, num, peso, pct, pesoCompact } from "@/lib/format";
+import { fmtDateShort, fmtDay, kg, num, peso, pct, pesoCompact } from "@/lib/format";
 import { sumBy } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/primitives";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/form-controls";
 import { Columns } from "@/components/charts/charts";
-import { CapacityBar, EmptyState, KPICard, LineItem, PageHeader, SectionTitle } from "@/components/shared/common";
-import { LoadTypeBadge, StatusBadge } from "@/components/shared/status-badge";
+import { EmptyState, PageHeader } from "@/components/shared/common";
+import { BackhaulMetric, ReturnLegCard } from "./backhaul-panels";
 
 interface Opportunity {
   job: LogisticsJob;
@@ -51,26 +54,27 @@ export function BackhaulView() {
   const assign = useAppStore((s) => s.assignJobToTrip);
   const metrics = useTripMetrics();
   const customers = useCustomerMap();
-
-  const current = trips.filter((t) => (t.date === TODAY || t.date === TOMORROW) && t.status !== "Cancelled").sort((a, b) => a.departure.localeCompare(b.departure));
-  const today = current.filter((t) => t.date === TODAY);
-  const done = trips.filter((t) => t.status === "Completed");
-  const opportunities = findOpportunities(jobs, trips, metrics);
+  const [date, setDate] = useState(TODAY);
+  const [view, setView] = useState("operations");
+  const periodStart = format(subDays(parseISO(TODAY), 30), "yyyy-MM-dd");
+  const periodEnd = format(subDays(parseISO(TODAY), 1), "yyyy-MM-dd");
+  const current = trips.filter((t) => t.date === date && t.status !== "Cancelled").sort((a, b) => a.departure.localeCompare(b.departure));
+  const done = trips.filter((t) => t.status === "Completed" && t.date >= periodStart && t.date < TODAY);
+  const opportunities = findOpportunities(jobs, current, metrics);
   const boardViews = useCapacityViews();
   const { byCapacity } = useBoardMatches();
-  // Load Board offers that fit one of our posted return legs.
   const boardFits = new Set(
     [...byCapacity.entries()]
       .filter(([capId]) => {
         const v = boardViews.get(capId);
-        return v?.post.fleet === "internal" && v.post.leg === "return";
+        return v?.post.fleet === "internal" && v.post.leg === "return" && v.trip?.date === date;
       })
       .flatMap(([, ms]) => ms.filter(isGoodMatch).map((m) => m.loadId)),
   );
-  const todayM = today.map((t) => metrics.get(t.id)!);
-  const unusedToday = sumBy(todayM, (m) => Math.max(0, m.capacityKg - m.returnKg));
+  const selectedMetrics = current.map((t) => metrics.get(t.id)!);
+  const unused = sumBy(selectedMetrics, (m) => Math.max(0, m.capacityKg - m.returnKg));
   const avgRet = done.length ? sumBy(done, (t) => metrics.get(t.id)!.retUtil) / done.length : 0;
-
+  const historicFreight = sumBy(done, (t) => sumBy(metrics.get(t.id)!.jobs.filter((j) => j.leg === "return"), jobTotal));
   const byDay = new Map<string, { date: string; paid: number; company: number; empty: number }>();
   for (const t of done) {
     const m = metrics.get(t.id)!;
@@ -97,111 +101,109 @@ export function BackhaulView() {
   }
 
   return (
-    <>
+    <div className="backhaul-workspace ops-enter">
+      <div className="ops-eyebrow mb-2 flex items-center gap-2"><Undo2 className="size-3.5" /> Return operations</div>
       <PageHeader
         title="Backhaul"
-        description="Every truck comes home to Lucena. Fill the return leg with paid third-party cargo, customer pickups or company-owned produce — no purchase order required."
+        description="Make room for more on the way home. Plan cargo and manage every return leg."
         actions={
           <>
-            <Button variant="outline" asChild>
-              <Link href="/loads">
-                <Plus /> Add company cargo
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
-              <Link href="/load-board?tab=capacity">
-                <ArrowLeftRight /> Load Board
-              </Link>
-            </Button>
+            <Button variant="outline" asChild><Link href="/loads"><Plus /> Add company cargo</Link></Button>
+            <Button asChild><Link href="/load-board?tab=capacity"><ArrowLeftRight /> Find return loads</Link></Button>
           </>
         }
       />
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KPICard label="Unused return capacity today" value={kg(unusedToday)} icon={Undo2} tone={unusedToday > 6000 ? "warning" : "success"} hint={`across ${today.length} trips`} />
-        <KPICard label="Return utilization today" value={pct(sumBy(todayM, (m) => m.returnKg) / Math.max(1, sumBy(todayM, (m) => m.capacityKg)))} icon={RouteIcon} hint={`30-day average ${pct(avgRet)}`} />
-        <KPICard label="Paid backhaul freight today" value={pesoCompact(sumBy(today, (t) => sumBy(metrics.get(t.id)!.jobs.filter((j) => j.leg === "return"), jobTotal)))} icon={Handshake} hint="third-party & backhaul jobs" />
-        <KPICard label="Company cargo value today" value={pesoCompact(sumBy(todayM, (m) => m.companyCargoValue))} icon={Building2} hint="purchase value, not freight revenue" />
-      </div>
-
-      {opportunities.length > 0 && (
-        <Card className="mb-4 border-primary/30 bg-accent/20">
-          <CardHeader>
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Lightbulb className="size-4 text-primary" /> Backhaul matches
-              </CardTitle>
-              <CardDescription>Rule-based: pickup is on the trip&apos;s return leg and the load fits the configured payload</CardDescription>
+      <Tabs value={view} onValueChange={setView}>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+          <TabsList className="backhaul-view-tabs h-auto gap-1 bg-transparent p-0" aria-label="Backhaul view">
+            <TabsTrigger value="operations" className="px-3 py-2"><Truck /> Return trips</TabsTrigger>
+            <TabsTrigger value="performance" className="px-3 py-2"><BarChart3 /> Performance</TabsTrigger>
+          </TabsList>
+          {view === "operations" ? (
+            <div className="flex items-center gap-2">
+              <CalendarDays className="hidden size-4 text-muted-foreground sm:block" />
+              <div role="group" aria-label="Return trip date" className="backhaul-dates flex rounded-lg border bg-card p-1">
+                {[TODAY, TOMORROW].map((d) => (
+                  <button key={d} type="button" aria-pressed={date === d} onClick={() => setDate(d)} className="cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors">
+                    {d === TODAY ? "Today" : "Tomorrow"}<span className="ml-1.5 font-normal opacity-75">{fmtDateShort(d)}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </CardHeader>
-          <CardContent className="grid gap-2">
-            {opportunities.map((o) => {
-              const truck = truckById(o.trip.truckId);
-              return (
-                <div key={o.job.id} className="flex flex-col gap-2 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 text-sm">
-                    <div>
-                      <Link href={`/jobs/${o.job.id}`} className="font-semibold text-primary hover:underline">
-                        {o.job.id}
-                      </Link>{" "}
-                      can be assigned to <b>{truck.code}</b> without exceeding configured payload capacity.
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {customers.get(o.job.customerId)?.name} · {o.job.cargoDescription} {kg(o.job.weightKg)} · {o.job.pickup.name} → {o.job.dropoff.name} · {peso(jobTotal(o.job))}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
-                      <span className="rounded bg-muted px-1.5 py-0.5">{o.onRoute ? `Pickup in ${areaName(o.job.pickup.areaId)} is on the return leg` : "Small detour from the return leg"}</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">{kg(o.freeAfter)} still free after</span>
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      assign(o.job.id, o.trip.id);
-                      toast.success(`${o.job.id} added to ${truck.code}'s return leg`, { description: `${o.trip.id} · ${kg(o.freeAfter)} return capacity left` });
-                    }}
-                  >
-                    <CheckCircle2 /> Assign to {truck.code}
-                  </Button>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
-
-      {boardFits.size > 0 && (
-        <div className="mb-4 flex flex-col gap-2 rounded-lg border bg-card px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <span className="flex items-start gap-2">
-            <ArrowLeftRight className="mt-0.5 size-4 shrink-0 text-primary" />
-            <span>
-              <b>{boardFits.size}</b> open load{boardFits.size === 1 ? "" : "s"} from the GCs on the Load Board fit our posted return legs. Once booked they appear below as paid return cargo.
-            </span>
-          </span>
-          <Button size="sm" variant="outline" asChild>
-            <Link href="/load-board">
-              Review on Load Board <ArrowRight />
-            </Link>
-          </Button>
+          ) : <span className="flex items-center gap-2 text-xs text-muted-foreground"><CalendarDays className="size-3.5" />{fmtDateShort(periodStart)} – {fmtDateShort(periodEnd)} · Last 30 days</span>}
         </div>
-      )}
 
-      <SectionTitle>Return legs — today & tomorrow</SectionTitle>
-      {current.length === 0 ? (
-        <EmptyState title="No trips scheduled today." className="mb-4 bg-card" />
-      ) : (
-        <div className="mb-6 grid gap-4 lg:grid-cols-2">
-          {current.map((t) => (
-            <ReturnLegCard key={t.id} trip={t} m={metrics.get(t.id)!} />
-          ))}
-        </div>
-      )}
+        <TabsContent value="operations" className="space-y-5">
+          <div className="backhaul-summary grid grid-cols-2 overflow-hidden rounded-xl border bg-card lg:grid-cols-4" role="region" aria-label={`Return summary for ${fmtDay(date)}`}>
+            <BackhaulMetric label="Available return space" value={kg(unused)} icon={Undo2} hint={`Across ${current.length} trips · ${date === TODAY ? "today" : "tomorrow"}`} featured />
+            <BackhaulMetric label="Return utilization" value={pct(sumBy(selectedMetrics, (m) => m.returnKg) / Math.max(1, sumBy(selectedMetrics, (m) => m.capacityKg)))} icon={RouteIcon} hint={`30-day average ${pct(avgRet)}`} />
+            <BackhaulMetric label="Paid backhaul freight" value={pesoCompact(sumBy(selectedMetrics, (m) => sumBy(m.jobs.filter((j) => j.leg === "return"), jobTotal)))} icon={Handshake} hint="Customer & third-party freight" />
+            <BackhaulMetric label="Company cargo value" value={pesoCompact(sumBy(selectedMetrics, (m) => m.companyCargoValue))} icon={Building2} hint="Purchase value, not freight revenue" />
+          </div>
 
-      <div className="grid gap-4 xl:grid-cols-5">
+          {(opportunities.length > 0 || boardFits.size > 0) && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/15 bg-accent/50 px-4 py-3">
+              <div className="flex items-center gap-2.5 text-xs"><span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-card text-primary"><PackagePlus className="size-4" /></span><div><div className="font-semibold">Fill the return leg</div><div className="mt-0.5 text-[11px] text-muted-foreground">{opportunities.length > 0 ? `${opportunities.length} unassigned jobs fit your trucks.` : "Find cargo for your available return space."}{boardFits.size > 0 && ` ${boardFits.size} matching loads on the Load Board.`}</div></div></div>
+              <div className="flex flex-wrap items-center gap-2">
+                {opportunities.length > 0 && <Button size="sm" variant="ghost" asChild><a href="#backhaul-matches">Review jobs <ArrowRight /></a></Button>}
+                {boardFits.size > 0 && <Button size="sm" variant="outline" asChild><Link href="/load-board">Browse matches <ArrowRight /></Link></Button>}
+              </div>
+            </div>
+          )}
+
+          <section aria-label="Scheduled return trips">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">Return schedule <span className="backhaul-count">{current.length} trips</span></h2>
+              <span className="text-[11px] text-muted-foreground">{fmtDay(date)} · Returning to Lucena</span>
+            </div>
+            {current.length === 0 ? <EmptyState icon={Truck} title="No return trips scheduled" description={`There are no trips for ${fmtDay(date)}. Plan one in Dispatch to start assigning return cargo.`} className="bg-card" action={<Button asChild><Link href="/dispatch">Open Dispatch <ArrowRight /></Link></Button>} /> : (
+              <div className="backhaul-trip-grid grid gap-4">{current.map((t) => <ReturnLegCard key={t.id} trip={t} m={metrics.get(t.id)!} />)}</div>
+            )}
+          </section>
+
+          {opportunities.length > 0 && (
+            <section id="backhaul-matches" aria-labelledby="backhaul-matches-heading" className="scroll-mt-24">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 id="backhaul-matches-heading" className="flex items-center gap-2 text-sm font-semibold">Ready to assign <span className="backhaul-count">{opportunities.length} jobs</span></h2><span className="text-[11px] text-muted-foreground">Pickup route & available payload</span></div>
+              <Card className="overflow-hidden">
+                <ul className="divide-y">
+                  {opportunities.map((o) => {
+                    const truck = truckById(o.trip.truckId);
+                    return (
+                      <li key={o.job.id} className="backhaul-match grid items-center gap-3 p-4 sm:px-5">
+                        <div className="min-w-0">
+                          <Link href={`/jobs/${o.job.id}`} className="text-[13px] font-semibold hover:text-primary hover:underline">{customers.get(o.job.customerId)?.name}</Link>
+                          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{o.job.cargoDescription}</div>
+                          <div className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{o.job.id} · {o.job.pickup.name} → {o.job.dropoff.name}</div>
+                        </div>
+                        <div className="text-xs"><div className="font-semibold tabular">{kg(o.job.weightKg)} <span className="ml-2 font-normal text-muted-foreground">{peso(jobTotal(o.job))}</span></div><div className="mt-1 text-[11px] text-muted-foreground">{o.onRoute ? `${areaName(o.job.pickup.areaId)} · on route` : "Off route · review pickup"}</div><div className="mt-1 text-[11px] text-primary">{kg(o.freeAfter)} free after assignment</div></div>
+                        <Button size="sm" className="justify-self-start text-xs sm:justify-self-end" onClick={() => {
+                          assign(o.job.id, o.trip.id);
+                          toast.success(`${o.job.id} added to ${truck.code}'s return leg`, { description: `${o.trip.id} · ${kg(o.freeAfter)} return capacity left` });
+                        }}><CheckCircle2 /> Assign to {truck.code}</Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Card>
+            </section>
+          )}
+          <p className="text-[11px] leading-relaxed text-muted-foreground">Capacity uses gross cargo weight against each truck’s configured payload. Expand a cargo manifest to see individual loads.</p>
+        </TabsContent>
+
+        <TabsContent value="performance" className="space-y-5">
+          <div className="backhaul-summary grid grid-cols-2 overflow-hidden rounded-xl border bg-card lg:grid-cols-4">
+            <BackhaulMetric label="Paid return freight" value={pesoCompact(historicFreight)} hint="Across completed trips · last 30 days" icon={Handshake} featured />
+            <BackhaulMetric label="Average return fill" value={pct(avgRet)} hint="Average utilization per completed trip" icon={RouteIcon} />
+            <BackhaulMetric label="Completed trips" value={done.length} hint="Last 30 completed calendar days" icon={CheckCircle2} />
+            <BackhaulMetric label="Company cargo value" value={pesoCompact(sumBy(done, (t) => metrics.get(t.id)!.companyCargoValue))} hint="Purchase value, not freight revenue" icon={Building2} />
+          </div>
+          {done.length === 0 ? <EmptyState icon={BarChart3} title="No completed trips in this period" description="Return capacity and lane performance will appear once trips are completed." className="bg-card" /> : (
+      <div className="grid items-start gap-4 xl:grid-cols-5">
         <Card className="xl:col-span-3">
           <CardHeader>
             <div>
-              <CardTitle>Return load, last 30 days</CardTitle>
-              <CardDescription>Paid vs company-owned backhaul vs empty space (kg per day, completed trips)</CardDescription>
+              <CardTitle>Return capacity by day</CardTitle>
+              <CardDescription>Paid cargo, company cargo and unused payload · tonnes per day</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
@@ -209,6 +211,7 @@ export function BackhaulView() {
               data={trend}
               xKey="date"
               stacked
+              height={320}
               valueFormat={(v) => `${num(v / 1000)}t`}
               xFormat={(d) => fmtDateShort(d)}
               labelFormat={(d) => fmtDay(d)}
@@ -218,18 +221,30 @@ export function BackhaulView() {
                 { key: "empty", name: "Empty capacity", color: "var(--chart-grid)" },
               ]}
             />
+            <dl className="mt-4 grid grid-cols-3 gap-3 border-t pt-4">
+              {[
+                { label: "Paid cargo", value: sumBy(trend, (d) => d.paid) },
+                { label: "Company cargo", value: sumBy(trend, (d) => d.company) },
+                { label: "Unused space", value: sumBy(trend, (d) => d.empty) },
+              ].map((item) => (
+                <div key={item.label}>
+                  <dt className="text-[11px] text-muted-foreground">{item.label}</dt>
+                  <dd className="mt-1 text-sm font-semibold tabular">{num(item.value / 1000)} t</dd>
+                </div>
+              ))}
+            </dl>
           </CardContent>
         </Card>
         <Card className="xl:col-span-2">
           <CardHeader>
             <div>
-              <CardTitle>By return lane</CardTitle>
-              <CardDescription>Completed trips · 30 days</CardDescription>
+              <CardTitle>Lane performance</CardTitle>
+              <CardDescription>Compare fill rates and paid freight by return route</CardDescription>
             </div>
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Return lane performance">
+              <table className="ops-table w-full text-xs"><caption className="sr-only">Return lane performance for the last 30 completed calendar days</caption>
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th className="px-4 py-2 font-medium sm:px-5">Lane</th>
@@ -242,7 +257,7 @@ export function BackhaulView() {
                   {[...lanes.values()]
                     .sort((a, b) => b.trips - a.trips)
                     .map((r) => (
-                      <tr key={r.label} className="border-b last:border-0">
+                      <tr key={r.label} className="border-b transition-colors last:border-0 hover:bg-muted/30">
                         <td className="px-4 py-2 sm:px-5">
                           <div className="font-medium">{r.label}</div>
                           <div className="text-xs text-muted-foreground">company cargo {pesoCompact(r.value)}</div>
@@ -258,94 +273,9 @@ export function BackhaulView() {
           </CardContent>
         </Card>
       </div>
-    </>
-  );
-}
-
-function ReturnLegCard({ trip, m }: { trip: Trip; m: TripMetrics }) {
-  const customers = useCustomerMap();
-  const boardLoads = useAppStore((s) => s.boardLoads);
-  const truck = truckById(trip.truckId);
-  const route = routeById(trip.routeId);
-  const loc = truckLocation(trip);
-  const free = Math.max(0, m.capacityKg - m.returnKg);
-  const paid = sumBy(m.jobs.filter((j) => j.leg === "return"), jobTotal);
-  return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full" style={{ background: truck.color }} />
-            {truck.code}
-            <StatusBadge status={trip.status} className="text-[10px]" />
-          </CardTitle>
-          <CardDescription>
-            <Link href={`/trips/${trip.id}`} className="hover:underline">
-              {trip.id}
-            </Link>{" "}
-            · {fmtDay(trip.date)} · {driverById(trip.driverId).name}
-          </CardDescription>
-        </div>
-        <Button variant="ghost" size="sm" asChild>
-          <Link href={`/trips/${trip.id}`}>
-            Trip <ArrowRight />
-          </Link>
-        </Button>
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="flex gap-2">
-            <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
-            <div>
-              <div className="text-xs text-muted-foreground">Current</div>
-              <div className="font-medium">{loc.label.replace(/^(At|En route to) /, "")}</div>
-              {loc.detail && <div className="text-xs text-muted-foreground">{loc.detail}</div>}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Undo2 className="mt-0.5 size-4 shrink-0 text-[oklch(0.45_0.14_300)]" />
-            <div>
-              <div className="text-xs text-muted-foreground">Returning</div>
-              <div className="font-medium">{returnLegName(route)}</div>
-              <div className="text-xs text-muted-foreground">ETA Lucena {fmtTime(trip.actualReturn ?? trip.expectedReturn)}</div>
-            </div>
-          </div>
-        </div>
-        <CapacityBar used={m.returnKg} capacity={m.capacityKg} label="Return capacity used" />
-        <ul className="grid gap-1.5">
-          {m.returnLoads.map((l) => (
-            <li key={l.id} className="flex items-center justify-between gap-2 text-sm">
-              <span className="min-w-0 truncate">
-                {l.cargoDescription.split(/[,(]/)[0]} — <span className="text-muted-foreground">{l.jobId ? customers.get(l.customerId ?? "")?.name : `from ${l.pickup.name}`}</span>
-                {l.jobId && boardLoads.some((b) => b.jobId === l.jobId) && <span className="ml-1 text-[11px] text-[oklch(0.45_0.14_300)]">· via Load Board</span>}
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                <LoadTypeBadge type={l.type} />
-                <span className="w-20 text-right font-medium tabular">{kg(l.weightKg)}</span>
-              </span>
-            </li>
-          ))}
-          {m.returnLoads.length === 0 && <li className="text-sm text-muted-foreground">Nothing planned for the return leg yet.</li>}
-        </ul>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-t pt-3 text-sm">
-          <LineItem label="Used" value={kg(m.returnKg)} />
-          <LineItem label="Remaining" value={kg(free)} strong />
-          <LineItem label="Return utilization" value={pct(m.retUtil)} />
-          <LineItem label="Paid backhaul" value={peso(paid)} />
-          <LineItem label="Company cargo value" value={peso(m.companyCargoValue)} muted className="col-span-2" />
-        </div>
-        {free >= 1000 && trip.status !== "Completed" && (
-          <div className="flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-[oklch(0.42_0.1_65)]">
-            <Lightbulb className="mt-0.5 size-3.5 shrink-0" />
-            <span>
-              {truck.code} has <b>{kg(free)}</b> unused return capacity. Offer it to Quezon traders or add company produce from {route.returnAreas.map(areaName).join(" / ")}.{" "}
-              <Link href="/load-board?tab=capacity" className="font-medium underline">
-                Match it on the Load Board
-              </Link>
-            </span>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
