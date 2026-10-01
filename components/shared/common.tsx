@@ -18,6 +18,7 @@ import {
   Search,
   UserRound,
   Users,
+  Waypoints,
   type LucideIcon,
   Inbox,
 } from "lucide-react";
@@ -309,8 +310,11 @@ const JOB_SOURCE_META: Record<JobSource, { icon: LucideIcon; className: string }
   Referral: { icon: Users, className: "bg-accent text-accent-foreground" },
   "Customer Portal": { icon: Globe, className: "bg-accent text-accent-foreground" },
   "Load Board": { icon: ArrowLeftRight, className: "bg-[oklch(0.95_0.04_300)] text-[oklch(0.45_0.14_300)]" },
+  "Backhaul Marketplace": { icon: Waypoints, className: "bg-[oklch(0.95_0.04_185)] text-[oklch(0.42_0.1_185)]" },
 };
 export const JOB_SOURCES = Object.keys(JOB_SOURCE_META) as JobSource[];
+/** Set by the system when a post or request is booked — never picked on the manual job form. */
+export const SYSTEM_JOB_SOURCES: JobSource[] = ["Load Board", "Backhaul Marketplace"];
 
 export function JobSourceBadge({ source }: { source: JobSource }) {
   const m = JOB_SOURCE_META[source];

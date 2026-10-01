@@ -4,6 +4,7 @@ import { LIFETIME_BASELINE } from "../data/finance";
 import { LUCENA_WAREHOUSE } from "../data/areas";
 import { getCustomerStats, getInvoices, getTripMetricsMap, invoiceIdForJob, tripWarnings, unassignedJobs } from "../lib/logistics";
 import { capacityShareMessage, getBoardMatches, getCapacityViews, loadShareMessage, loadStatus } from "../lib/load-board";
+import { getListingViews, requestStatus } from "../lib/backhaul-marketplace";
 
 const s = () => useAppStore.getState();
 const metrics = () => getTripMetricsMap(s().trips, s().jobs, s().loads, s().deliveries, s().expenses);
@@ -152,3 +153,57 @@ const cmsg = capacityShareMessage(views().get("CAP-260925-004")!);
 assert(cmsg.startsWith("AVAILABLE TRUCK CAPACITY") && cmsg.includes("Available Capacity: 4,200 kg") && cmsg.includes("Departure: Tonight, 9:00 PM"), "capacity share message");
 const lmsg = loadShareMessage(s().boardLoads.find((l) => l.id === "FRT-260925-010")!);
 assert(lmsg.startsWith("LOAD AVAILABLE") && lmsg.includes("Weight: 2,000 kg") && lmsg.includes("Noel Pascual") && !lmsg.includes("Rolando"), "customer load reposted with our desk as contact");
+
+// ─── Backhaul Marketplace (preview) ─────────────────────────────────────────
+const legs = () => getListingViews(s().trips, s().backhaulListings, s().backhaulRequests, metrics(), s().jobs);
+const req = (id: string) => s().backhaulRequests.find((r) => r.id === id)!;
+const reqStatus = (id: string) => {
+  const r = req(id);
+  return requestStatus(r, r.jobId ? s().jobs.find((j) => j.id === r.jobId) : undefined, legs().get(s().backhaulListings.find((l) => l.id === r.listingId)!.tripId)?.status);
+};
+
+// 18. Seeded marketplace booking rides Truck 02 today
+const seeded = s().jobs.find((j) => j.id === req("BKR-260925-001").jobId)!;
+assert(seeded.id === "JOB-260925-022" && seeded.source === "Backhaul Marketplace" && seeded.tripId === "TRIP-260925-02" && legs().get("TRIP-260925-02")!.booked.some((b) => b.job.id === seeded.id), "BKR-260925-001 is JOB-260925-022 on TRIP-260925-02's return leg");
+
+// 19. A full return leg cannot take a marketplace request
+assert(legs().get("TRIP-260925-01")!.status === "Full" && legs().get("TRIP-260925-01")!.openKg === 0, "Truck 01 listing is Full once the board bookings filled it");
+const jobsBefore19 = s().jobs.length;
+assert(s().confirmBackhaulRequest({ requestId: "BKR-260925-002", freightCharge: 7500, paymentTerms: "COD" }) === undefined && s().jobs.length === jobsBefore19 && reqStatus("BKR-260925-002") === "Requested", "confirming on a full leg is refused and creates nothing");
+
+// 20. Confirm a request → Job + Third-Party Load on the trip's return leg
+const leg20 = legs().get("TRIP-260926-01")!;
+const cap20 = views().get("CAP-260925-002")!.availableKg;
+const customers20 = s().customers.length;
+const c20 = s().confirmBackhaulRequest({ requestId: "BKR-260925-005", freightCharge: 3000, paymentTerms: "COD" })!;
+const mj = s().jobs.find((j) => j.id === c20.jobId)!;
+assert(c20.created && mj.source === "Backhaul Marketplace" && mj.leg === "return" && mj.tripId === "TRIP-260926-01" && mj.status === "Assigned", `BKR-260925-005 became ${c20.jobId} on TRIP-260926-01`);
+const ml = s().loads.filter((l) => l.jobId === mj.id);
+assert(ml.length === 1 && ml[0].type === "Third-Party" && ml[0].weightKg === 600 && ml[0].tripId === "TRIP-260926-01", "one 600 kg third-party load on the trip");
+assert(s().deliveries.some((d) => d.jobId === mj.id && d.tripId === "TRIP-260926-01") && s().trips.find((t) => t.id === "TRIP-260926-01")!.stops.some((st) => st.loaded.includes(ml[0].id)), "pickup stop and delivery (own waybill) added");
+const shipper20 = s().customers.find((c) => c.id === mj.customerId)!;
+assert(s().customers.length === customers20 + 1 && shipper20.leadSource === "Backhaul Marketplace" && shipper20.status === "new", `shipper saved as new customer ${shipper20.id}`);
+assert(reqStatus("BKR-260925-005") === "Confirmed" && req("BKR-260925-005").customerId === shipper20.id, "request is Confirmed and linked to the customer");
+assert(legs().get("TRIP-260926-01")!.openKg === leg20.openKg - 600 && views().get("CAP-260925-002")!.availableKg === cap20 - 600, "open space drops by 600 kg on the listing and on the Load Board");
+
+// 21. Repeating the confirmation never duplicates
+const again = s().confirmBackhaulRequest({ requestId: "BKR-260925-005", freightCharge: 3000, paymentTerms: "COD" })!;
+assert(!again.created && again.jobId === mj.id && s().jobs.length === jobsBefore19 + 1, "repeat confirmation creates no duplicate job");
+
+// 22. Shipper requests space: instant quote, over-capacity refused, decline
+const rq = s().requestBackhaulSpace({ listingId: "BHL-260925-001", shipper: { businessName: "Pagbilao Sari-Sari Wholesale", contactName: "Ditas Mercado", phone: "0917 000 4412" }, pickup: { name: "Valenzuela City", areaId: "valenzuela" }, dropoff: { name: "Pagbilao Sari-Sari Wholesale", areaId: "pagbilao", address: "Brgy. Poblacion, Pagbilao" }, cargoDescription: "Garlic", cargoCategory: "Produce", quantity: 40, unit: "sack", weightKg: 800, readyAt: "2026-09-26T09:30" })!;
+assert(!!rq && req(rq).quotedFreight === 4000 && reqStatus(rq) === "Requested" && s().notifications[0].href.includes(rq), `${rq} requested with a ₱4,000 instant quote and a dispatch notification`);
+assert(s().requestBackhaulSpace({ ...req(rq), weightKg: 9000 }) === undefined, "request bigger than the open space is refused");
+s().declineBackhaulRequest(rq, "Truck leaves Valenzuela before your cargo is ready");
+assert(reqStatus(rq) === "Declined" && s().confirmBackhaulRequest({ requestId: rq, freightCharge: 4000, paymentTerms: "COD" }) === undefined, "declined request cannot be confirmed");
+
+// 23. Publishing is one listing per return leg; pausing stops new requests
+const bhl = s().publishBackhaulListing({ tripId: "TRIP-260926-02", ratePerKg: 5, minimumCharge: 1500, acceptedCargo: [] })!;
+const listingsCount = s().backhaulListings.length;
+assert(s().publishBackhaulListing({ tripId: "TRIP-260926-02", ratePerKg: 5.5, minimumCharge: 1500, acceptedCargo: [] }) === bhl && s().backhaulListings.length === listingsCount && s().backhaulListings.find((l) => l.id === bhl)!.ratePerKg === 5.5, `${bhl}: re-publishing updates terms, no second listing`);
+s().setBackhaulListingStatus(bhl, "Paused");
+assert(legs().get("TRIP-260926-02")!.status === "Paused" && s().requestBackhaulSpace({ ...req(rq), listingId: bhl, pickup: { name: "Dasmariñas", areaId: "dasmarinas" } }) === undefined, "paused listing takes no new requests");
+
+// 24. Cancelling the job gives the space back and the request follows the job
+s().cancelJob(mj.id, "Shipper postponed");
+assert(reqStatus("BKR-260925-005") === "Cancelled" && legs().get("TRIP-260926-01")!.openKg === leg20.openKg, "cancelled marketplace job frees the return space");

@@ -7,26 +7,28 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { ArrowRight, FileText, MapPin, MessageCircle, Phone, Plus, Route, UserCheck, Users, Megaphone, Target } from "lucide-react";
+import { ArrowRight, ArrowUpRight, FileText, Kanban, List, MapPin, MessageCircle, Phone, Plus, Route, UserCheck, Users, Megaphone, Target, X, type LucideIcon } from "lucide-react";
 import type { AreaId, Lead, LeadSource, LeadStage, CustomerType } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { STAFF, staffById } from "@/data/company";
 import { AREAS } from "@/data/areas";
 import { fmtDate, fmtDateShort, fmtDateTime, peso, pesoCompact, pct } from "@/lib/format";
-import { sumBy } from "@/lib/utils";
+import { cn, sumBy } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, Input, Textarea } from "@/components/ui/primitives";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/overlays";
 import { Field, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/form-controls";
-import { KPICard, PageHeader, Stat, Timeline } from "@/components/shared/common";
+import { EmptyState, FilterBar, FilterSelect, PageHeader, Stat, Timeline } from "@/components/shared/common";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table/data-table";
+import { LeadPipeline } from "./leads-pipeline";
 import { CUSTOMER_TYPES } from "@/features/customers/customers-view";
 
 export const STAGES: LeadStage[] = ["New", "Contacted", "Quoted", "Sample Order", "Negotiating", "Won", "Lost"];
 export const LEAD_SOURCES: LeadSource[] = ["Facebook Marketplace", "Facebook Group", "Facebook Page", "Messenger", "Referral", "Walk-in", "Existing Customer Referral"];
-const DND = "application/x-tradeloop-lead";
+
 
 export function LeadsView() {
   const leads = useAppStore((s) => s.leads);
@@ -34,119 +36,81 @@ export function LeadsView() {
   const moveLead = useAppStore((s) => s.moveLead);
   const [selected, setSelected] = React.useState<string>();
   const [adding, setAdding] = React.useState(false);
+  const [view, setView] = React.useState("list");
   const [source, setSource] = React.useState("all");
-  const visible = leads.filter((l) => source === "all" || l.source === source);
+  const [owner, setOwner] = React.useState("all");
+  const [stage, setStage] = React.useState("open");
+  const [search, setSearch] = React.useState("");
+  const stages = STAGES.filter((s) => stage === "all" || (stage === "open" ? s !== "Won" && s !== "Lost" : s === stage));
+  const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const visible = leads.filter((lead) =>
+    (source === "all" || lead.source === source) &&
+    (owner === "all" || lead.ownerId === owner) && stages.includes(lead.stage) &&
+    terms.every((term) => `${lead.id} ${lead.businessName} ${lead.contactName} ${lead.phone} ${lead.location} ${lead.lane} ${lead.cargoInterest}`.toLowerCase().includes(term)),
+  );
   const open = leads.filter((l) => l.stage !== "Won" && l.stage !== "Lost");
   const won = leads.filter((l) => l.stage === "Won").length;
   const lost = leads.filter((l) => l.stage === "Lost").length;
   const fb = leads.filter((l) => l.source.startsWith("Facebook") || l.source === "Messenger");
   const sel = leads.find((l) => l.id === selected);
+  const filtered = Boolean(search || source !== "all" || owner !== "all" || stage !== "open");
+  const reset = () => { setSearch(""); setSource("all"); setOwner("all"); setStage("open"); };
+  const onMove = (id: string, next: LeadStage) => {
+    const lead = leads.find((l) => l.id === id);
+    if (!lead || lead.stage === next) return;
+    moveLead(id, next);
+    toast.success(`${lead.businessName} → ${next}`);
+  };
+  const columns: ColumnDef<Lead, unknown>[] = [
+    { id: "business", header: "Business / contact", accessorFn: (lead) => lead.businessName, cell: ({row}) => <div className="min-w-[170px] max-w-[240px]"><button type="button" onClick={(e) => { e.stopPropagation(); setSelected(row.original.id); }} className="cursor-pointer text-left text-[13px] font-semibold leading-relaxed hover:text-primary hover:underline">{row.original.businessName}</button><div className="mt-1 text-[11px] text-muted-foreground">{row.original.contactName}</div><div className="mt-1 flex items-start gap-1 text-[10px] text-muted-foreground"><MapPin className="mt-0.5 size-3 shrink-0" />{row.original.location}</div></div> },
+    { id: "lane", header: "Freight opportunity", accessorFn: (lead) => lead.lane, cell: ({row}) => <div className="min-w-[160px] max-w-[225px]"><div className="text-xs font-medium leading-relaxed">{row.original.lane}</div><div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{row.original.cargoInterest}</div><div className="mt-1 text-[10px] text-muted-foreground">{row.original.potentialVolume}</div></div> },
+    { id: "stage", header: "Stage / source", accessorFn: (lead) => lead.stage, cell: ({row}) => <div className="grid gap-2"><StatusBadge status={row.original.stage} className="text-[10px]" /><span className="max-w-32 text-[10px] leading-relaxed text-muted-foreground">{row.original.source}</span></div> },
+    { id: "potential", header: "Potential / mo", accessorFn: (lead) => lead.potentialMonthlyValue, meta: {align:"right"}, cell: ({row}) => <span className="whitespace-nowrap text-xs font-semibold text-primary tabular">{pesoCompact(row.original.potentialMonthlyValue)}</span> },
+    { id: "lastContact", header: "Last contact / owner", accessorFn: (lead) => lead.lastContactAt, cell: ({row}) => <div><div className="whitespace-nowrap text-xs tabular">{fmtDateShort(row.original.lastContactAt)}</div><div className="mt-1 text-[11px] text-muted-foreground">{staffById(row.original.ownerId)?.name ?? "Unassigned"}</div></div> },
+    { id: "actions", header: () => <span className="sr-only">Open lead</span>, enableSorting: false, cell: ({row}) => <Button variant="ghost" size="icon-sm" aria-label={`Open ${row.original.businessName}`} onClick={(e) => {e.stopPropagation(); setSelected(row.original.id);}}><ArrowUpRight /></Button> },
+  ];
+  const empty = <EmptyState icon={Target} title="No leads match this view" description="Try another search, owner, source or stage." action={filtered ? <Button variant="outline" onClick={reset}>Reset filters</Button> : <Button onClick={() => setAdding(true)}><Plus /> Add lead</Button>} className="bg-card" />;
 
   return (
-    <>
-      <PageHeader
-        title="Leads"
-        description="Shippers and consignees from Facebook groups, Marketplace, Messenger and referrals — tracked from first message to first booked trip."
-        actions={
-          <Button onClick={() => setAdding(true)}>
-            <Plus /> Add lead
-          </Button>
-        }
-      />
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KPICard label="Open leads" value={open.length} icon={Target} hint={`${pesoCompact(sumBy(open, (l) => l.potentialMonthlyValue))}/month freight potential`} />
-        <KPICard label="From Facebook & Messenger" value={fb.length} icon={Megaphone} hint={`${pct(fb.length / Math.max(1, leads.length))} of all leads`} />
-        <KPICard label="Conversion rate" value={pct(won / Math.max(1, won + lost))} icon={UserCheck} hint={`${won} won · ${lost} lost`} tone="success" />
-        <KPICard label="Quotes out to leads" value={quotes.filter((q) => q.leadId && q.status === "Sent").length} icon={FileText} hint="awaiting reply" href="/quotes" />
+    <div className="leads-workspace ops-enter">
+      <div className="ops-eyebrow mb-2 flex items-center gap-2"><Target className="size-3.5" /> Sales & relationships</div>
+      <PageHeader title="Leads" description="Turn freight inquiries into lasting customer relationships." actions={<><Button variant="outline" asChild><Link href="/quotes"><FileText /> View quotes</Link></Button><Button onClick={() => setAdding(true)}><Plus /> Add lead</Button></>} />
+      <div className="lead-summary mb-6 grid grid-cols-2 overflow-hidden rounded-xl border bg-card lg:grid-cols-4">
+        <LeadMetric label="Open leads" value={open.length} icon={Target} hint={`${pesoCompact(sumBy(open, (l) => l.potentialMonthlyValue))}/month freight potential`} featured />
+        <LeadMetric label="Facebook & Messenger" value={fb.length} icon={Megaphone} hint={`${pct(fb.length / Math.max(1, leads.length))} of all leads`} />
+        <LeadMetric label="Closed-lead win rate" value={pct(won / Math.max(1, won + lost))} icon={UserCheck} hint={`${won} won · ${lost} lost`} />
+        <LeadMetric label="Quotes awaiting reply" value={quotes.filter((q) => q.leadId && q.status === "Sent").length} icon={FileText} hint="Sent quotes linked to leads" />
       </div>
-      <Tabs defaultValue="pipeline">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <TabsList>
-            <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
-          </TabsList>
-          <Select value={source} onValueChange={setSource}>
-            <SelectTrigger className="w-56" aria-label="Lead source">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All sources</SelectItem>
-              {LEAD_SOURCES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <Tabs value={view} onValueChange={setView}>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+          <TabsList aria-label="Lead views" className="lead-view-tabs h-auto gap-1 bg-transparent p-0"><TabsTrigger value="list" className="px-3 py-2 text-xs"><List /> Lead list</TabsTrigger><TabsTrigger value="pipeline" className="px-3 py-2 text-xs"><Kanban /> Pipeline</TabsTrigger></TabsList>
+          <span className="text-[11px] text-muted-foreground" aria-live="polite">{visible.length} {visible.length === 1 ? "lead" : "leads"} · {pesoCompact(sumBy(visible, (l) => l.potentialMonthlyValue))}/month potential</span>
         </div>
-        <TabsContent value="pipeline">
-          <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-thin">
-            {STAGES.map((stage) => {
-              const list = visible.filter((l) => l.stage === stage);
-              return (
-                <div
-                  key={stage}
-                  className="flex w-64 shrink-0 flex-col rounded-xl border bg-muted/40"
-                  onDragOver={(e) => e.dataTransfer.types.includes(DND) && e.preventDefault()}
-                  onDrop={(e) => {
-                    const id = e.dataTransfer.getData(DND);
-                    const lead = leads.find((l) => l.id === id);
-                    if (lead && lead.stage !== stage) {
-                      moveLead(id, stage);
-                      toast.success(`${lead.businessName} → ${stage}`);
-                    }
-                  }}
-                >
-                  <div className="flex items-center justify-between px-3 py-2.5">
-                    <span className="text-sm font-semibold">{stage}</span>
-                    <span className="text-xs text-muted-foreground tabular">
-                      {list.length} · {pesoCompact(sumBy(list, (l) => l.potentialMonthlyValue))}/mo
-                    </span>
-                  </div>
-                  <div className="grid gap-2 px-2 pb-2">
-                    {list.map((l) => (
-                      <button
-                        key={l.id}
-                        type="button"
-                        draggable
-                        onDragStart={(e) => e.dataTransfer.setData(DND, l.id)}
-                        onClick={() => setSelected(l.id)}
-                        className="grid gap-1.5 rounded-lg border bg-card p-3 text-left shadow-xs transition-colors hover:border-primary/40 cursor-pointer"
-                      >
-                        <div className="font-medium leading-tight">{l.businessName}</div>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <MapPin className="size-3" /> {l.location}
-                        </div>
-                        <div className="flex items-center gap-1 text-xs">
-                          <Route className="size-3 text-primary" /> {l.lane}
-                        </div>
-                        <div className="text-xs">
-                          <span className="text-muted-foreground">Cargo:</span> {l.cargoInterest}
-                        </div>
-                        <div className="text-xs">
-                          <span className="text-muted-foreground">Potential:</span> {l.potentialVolume}
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <Badge variant="outline" className="text-[10.5px]">
-                            {l.source}
-                          </Badge>
-                          <span className="text-[11px] text-muted-foreground">{fmtDateShort(l.lastContactAt)}</span>
-                        </div>
-                      </button>
-                    ))}
-                    {list.length === 0 && <div className="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">Drop leads here</div>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        <div className="mb-4 rounded-xl border bg-card">
+          <FilterBar search={search} onSearch={setSearch} placeholder="Search business, contact or route…" className="border-0">
+            <FilterSelect value={source} onChange={setSource} label="Lead source" options={[{value:"all",label:"All sources"},...LEAD_SOURCES.map((s)=>({value:s,label:s}))]} />
+            <FilterSelect value={owner} onChange={setOwner} label="Lead owner" options={[{value:"all",label:"All owners"},...STAFF.filter((s)=>s.role === "sales" || leads.some((l)=>l.ownerId===s.id)).map((s)=>({value:s.id,label:s.name}))]} />
+            <FilterSelect value={stage} onChange={setStage} label="Lead stage" options={[{value:"open",label:"Open stages"},{value:"all",label:"All stages"},...STAGES.map((s)=>({value:s,label:s}))]} />
+            {filtered && <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={reset}><X /> Reset filters</Button>}
+          </FilterBar>
+        </div>
+        <TabsContent value="list">
+          <Card className="overflow-hidden"><DataTable columns={columns} data={visible} pageSize={10} initialSorting={[{id:"lastContact",desc:true}]} className="lead-register" onRowClick={(lead)=>setSelected(lead.id)} empty={empty} renderCard={(lead)=>(
+            <div className="grid gap-2"><div className="flex items-start justify-between gap-2"><button type="button" onClick={(e)=>{e.stopPropagation();setSelected(lead.id);}} className="cursor-pointer text-left text-sm font-semibold hover:text-primary">{lead.businessName}</button><StatusBadge status={lead.stage} className="text-[10px]" /></div><div className="text-[11px] text-muted-foreground">{lead.contactName} · {lead.location}</div><div className="rounded-md bg-accent/40 p-2.5 text-xs"><div className="font-medium">{lead.lane}</div><div className="mt-1 text-muted-foreground">{lead.cargoInterest}</div></div><div className="flex items-center justify-between gap-2 text-[11px]"><span className="font-semibold text-primary">{pesoCompact(lead.potentialMonthlyValue)}/mo</span><span className="text-muted-foreground">Contacted {fmtDateShort(lead.lastContactAt)}</span></div><div className="text-[10px] text-muted-foreground">{lead.source} · {staffById(lead.ownerId)?.name}</div></div>
+          )} /></Card>
         </TabsContent>
+        <TabsContent value="pipeline">{visible.length ? <LeadPipeline leads={visible} stages={stages} onOpen={setSelected} onMove={onMove} /> : empty}</TabsContent>
       </Tabs>
       <Sheet open={!!sel} onOpenChange={(v) => !v && setSelected(undefined)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-lg">{sel && <LeadDetail lead={sel} />}</SheetContent>
+        <SheetContent className="admin-shell w-full overflow-y-auto bg-background sm:max-w-xl">{sel && <LeadDetail key={sel.id} lead={sel} />}</SheetContent>
       </Sheet>
       <AddLeadDialog open={adding} onOpenChange={setAdding} />
-    </>
+    </div>
   );
+}
+
+function LeadMetric({label,value,hint,icon:Icon,featured}:{label:string;value:React.ReactNode;hint:string;icon:LucideIcon;featured?:boolean}) {
+  return <div className={cn("lead-metric min-w-0 p-4 sm:p-5",featured && "lead-metric-featured")}><div className="flex items-start justify-between gap-2 text-xs font-medium"><span>{label}</span><Icon className="size-4 shrink-0 opacity-70" strokeWidth={1.6} /></div><div className="my-3 text-[30px] leading-none font-semibold tracking-tight tabular">{value}</div><p className="text-[11px] leading-relaxed opacity-75">{hint}</p></div>;
 }
 
 function LeadDetail({ lead }: { lead: Lead }) {
@@ -156,30 +120,26 @@ function LeadDetail({ lead }: { lead: Lead }) {
   const [note, setNote] = React.useState("");
   const owner = staffById(lead.ownerId);
   return (
-    <div className="grid gap-4 p-5">
-      <div>
-        <SheetTitle className="flex flex-wrap items-center gap-2 pr-6">
+    <div className="grid gap-5 p-5 sm:p-6">
+      <div className="border-b pb-5">
+        <div className="ops-eyebrow mb-3">Lead workspace</div>
+        <SheetTitle className="flex flex-wrap items-center gap-2 pr-6 text-xl leading-snug tracking-tight">
           {lead.businessName} <StatusBadge status={lead.stage} />
         </SheetTitle>
         <SheetDescription>
           {lead.id} · {lead.source} · created {fmtDate(lead.createdAt)}
         </SheetDescription>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="rounded-xl bg-[#203a3c] p-4 text-white"><div className="text-[11px] text-white/75">Potential monthly freight</div><div className="mt-2 text-[28px] font-semibold tracking-tight tabular">{peso(lead.potentialMonthlyValue)}</div><div className="mt-1 text-xs text-white/75">{lead.potentialVolume}</div></div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-5 rounded-xl border bg-card p-4">
         <Stat label="Contact" value={lead.contactName} sub={lead.phone} />
         <Stat label="Location" value={lead.location} />
         <Stat label="Business type" value={lead.businessType} />
         <Stat label="Owner" value={owner?.name ?? "—"} />
-        <Stat label="Potential volume" value={lead.potentialVolume} />
-        <Stat label="Potential freight" value={`${peso(lead.potentialMonthlyValue)}/month`} />
+
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        <Badge variant="teal">
-          <Route /> {lead.lane}
-        </Badge>
-        <Badge variant="outline">{lead.cargoInterest}</Badge>
-      </div>
-      {lead.nextStep && <div className="rounded-md bg-accent/60 p-3 text-sm"><b>Next step:</b> {lead.nextStep}</div>}
+      <div className="rounded-xl border bg-card p-4"><div className="mb-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Freight requirements</div><div className="flex items-start gap-2 text-sm font-medium"><Route className="mt-0.5 size-4 shrink-0 text-primary" />{lead.lane}</div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">{lead.cargoInterest}</p></div>
+      {lead.nextStep && <div className="rounded-lg border border-primary/15 bg-accent/60 p-4 text-xs leading-relaxed"><b>Next step:</b> {lead.nextStep}</div>}
       {lead.lostReason && <div className="rounded-md bg-danger-soft p-3 text-sm"><b>Lost:</b> {lead.lostReason}</div>}
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" asChild>
@@ -223,7 +183,7 @@ function LeadDetail({ lead }: { lead: Lead }) {
             <ConfirmDialog
               trigger={
                 <Button size="sm">
-                  <UserCheck /> Convert Lead → Customer
+                  <UserCheck /> Convert to customer
                 </Button>
               }
               title={`Convert ${lead.businessName} to a customer?`}
@@ -238,7 +198,7 @@ function LeadDetail({ lead }: { lead: Lead }) {
           )
         )}
       </div>
-      <div className="grid gap-2">
+      <div className="grid gap-3 rounded-xl border bg-card p-4">
         <Field label="Add activity note" htmlFor="lead-note">
           <Textarea id="lead-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Called — wants sample on Thursday" />
         </Field>

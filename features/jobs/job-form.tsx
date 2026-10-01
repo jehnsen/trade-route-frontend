@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Separator, Textarea } from "@/components/ui/primitives";
 import { Combobox, DatePicker, Field, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/form-controls";
-import { DemoRateNote, JOB_SOURCES, LineItem, PageHeader } from "@/components/shared/common";
+import { DemoRateNote, JOB_SOURCES, LineItem, PageHeader, SYSTEM_JOB_SOURCES } from "@/components/shared/common";
 
 const TERMS: PaymentTerms[] = ["COD", "Credit 7 Days", "Credit 15 Days", "Credit 30 Days", "50% Down, Balance on Arrival"];
 const REQUIREMENTS: TruckRequirement[] = ["Shared van (LTL)", "Insulated van, iced cargo", "Full truck — 10-wheeler"];
@@ -262,7 +262,7 @@ export function JobForm({ initialCustomerId }: { initialCustomerId?: string }) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {JOB_SOURCES.filter((s) => s !== "Load Board").map((s) => (
+                        {JOB_SOURCES.filter((s) => !SYSTEM_JOB_SOURCES.includes(s)).map((s) => (
                           <SelectItem key={s} value={s}>
                             {s}
                           </SelectItem>

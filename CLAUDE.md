@@ -159,10 +159,12 @@ data/             reference data + generators
   customers.ts, leads.ts, fleet.ts (trucks, drivers, vehicle documents), finance.ts
   logistics-seed.ts  logistics generator
   load-board.ts   trucking partners, board loads, board capacity
+  backhaul-marketplace.ts  marketplace listings and shipper requests (preview)
   seed.ts, products.ts, suppliers.ts, orders.ts, procurement.ts  trading (Phase 2)
 lib/
   logistics.ts    stop planning, trip metrics, billing, fleet status, customer stats
   load-board.ts   board statuses, capacity views, rule-based matching, share messages
+  backhaul-marketplace.ts  listing views, request statuses, instant quotes, fit checks
   store.ts        Zustand store + actions
   format.ts       peso, pesoCompact, kg, pct, num, date formatters, relativeDay
   domain.ts       domain label helpers (jobLane, tripRouteLine, …)
@@ -219,7 +221,16 @@ Share messages (`loadShareMessage`, `capacityShareMessage`) produce plain-text p
 
 **Load Board vs Backhaul:** the board holds offers that are **not yet on a trip**. Backhaul shows cargo **on** the return leg, and it links to the board where posted return legs have fitting loads. Trips with ≥ 1,000 kg of unposted return space are prompted for posting.
 
-**Load Board vs "Backhaul Marketplace" (future module):** the board is an internal coordination tool, with no public listing, bidding or payments between third parties. Keep it that way unless explicitly asked.
+**Load Board vs Backhaul Marketplace:** the board is an internal coordination tool, with no public listing, bidding or payments between third parties. Keep it that way unless explicitly asked.
+
+## Backhaul Marketplace (preview)
+
+A working preview at `/future/backhaul-marketplace` (`FutureModule.preview` in `lib/nav.ts`; logic in `lib/backhaul-marketplace.ts`). It lists **our own** return legs only, for outside shippers. There is no public page, online payment or bidding.
+
+- **BackhaulListing** (`BHL-yymmdd-nnn`): one per trip's return leg (₱/kg, minimum charge, accepted cargo). Open kg is read from the trip, never stored. Full / Departed are derived (`listingStatus`).
+- **BackhaulBookingRequest** (`BKR-yymmdd-nnn`): instant quote via `marketplaceQuote`; effective status via `requestStatus`; fit via `checkRequest` (same `MatchCheck` rules vocabulary as the board).
+- Actions: `publishBackhaulListing` (one listing per trip; re-publishing updates terms), `setBackhaulListingStatus`, `requestBackhaulSpace`, `confirmBackhaulRequest` (idempotent; creates a Job + Third-Party Load with source `Backhaul Marketplace` on the trip's return leg), `declineBackhaulRequest`.
+- `Backhaul Marketplace` is a system-only job source (`SYSTEM_JOB_SOURCES`), hidden from the manual job form like `Load Board`.
 
 ## Customers, leads, roles
 
@@ -373,7 +384,7 @@ Centralize calculations in `lib/logistics.ts` (e.g. `jobTotal`, `getTripMetricsM
 
 Shown under `/future/[slug]` (`FUTURE_MODULES` in `lib/nav.ts`), visually separate from Phase 1: Marketplace, Supplier Bidding, Backhaul Marketplace, Live GPS, Temperature Monitoring, Route Optimization, AI Demand Forecasting, Price Intelligence, Inter-Island Logistics, API Integrations.
 
-Do not implement them unless explicitly requested. Truck location today comes from the latest stop update, not GPS.
+Do not implement them unless explicitly requested. Backhaul Marketplace is the one with a working preview. Truck location today comes from the latest stop update, not GPS.
 
 # Avoid Scope Creep
 

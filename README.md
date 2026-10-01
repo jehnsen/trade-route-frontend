@@ -35,6 +35,7 @@ npm run check:flows  # exercises store actions (assign, POD, payments, quotes, t
 | Finance & Costs | `/accounts-receivable`, `/accounts-receivable/[invoiceId]`, `/payments`, `/expenses` (trip expenses) |
 | Driver (mobile) | `/driver` |
 | Print | `/print/delivery-receipt/[deliveryId]` (DR / waybill) |
+| Future Modules | `/future/backhaul-marketplace` (working preview; `?tab=requests&q=BKR-…`, `?tab=shipper`), `/future/[slug]` (roadmap cards) |
 | Trading — Phase 2 preview | `/orders`, `/dashboard`, `/catalog`, `/inventory`, `/procurement`, `/purchase-orders`, `/suppliers` |
 | Customer portal (trading storefront) | `/`, `/products`, `/order`, `/request-quote`, `/my-orders`, `/account`, `/contact` |
 
@@ -70,12 +71,22 @@ The board structures what already happens in the trucking GCs. It does not repla
 - **Share messages** ("LOAD AVAILABLE" / "AVAILABLE TRUCK CAPACITY") copy to the clipboard for reposting in the GCs.
 - Backhaul links to the board when posted return legs have fitting loads. The board prompts to post trips with ≥ 1,000 kg of unposted return space. The sidebar badge counts loads still needing a truck.
 
+## Backhaul Marketplace (preview)
+
+Lists **our own** return legs to Lucena for outside traders and shippers. It sits under Future Modules: listings are only visible inside TradeLoop, with no public page, online payment or bidding.
+
+- **BackhaulListing** (`BHL-yymmdd-nnn`): one per trip's return leg, with ₱/kg rate, minimum charge, accepted cargo and restrictions. Open kg is always read from the trip's loads (payload − return kg), never stored. Statuses: Published, Paused, Closed (recorded); Full and Departed are derived from the trip.
+- **BackhaulBookingRequest** (`BKR-yymmdd-nnn`): a shipper's request on a listing, with an **instant quote** (rate × kg, rounded to ₱50, never below the minimum). Statuses: Requested, Confirmed, Declined; Cancelled follows the job and Expired is derived once the leg departs.
+- **Fit checks** reuse the Load Board's explainable rules: pickup on the return route, drop-off in Quezon, open space, cargo-ready time vs the truck's ETA, accepted cargo.
+- **Confirming** a request creates a **Logistics Job + Third-Party Load** (source *Backhaul Marketplace*) on the trip's return leg, so it shows on Backhaul ("via Marketplace"), gets its own delivery and DR / waybill, and is invoiced on delivery. An unknown shipper becomes a new COD customer. Re-confirming never duplicates.
+- The **Shipper view** tab previews what a shipper sees (no trip ids, other cargo or revenue) and submits real requests into the inbox.
+
 ## Structure
 
 - `types/` — domain types (logistics first, trading types below)
-- `data/` — reference data (customers, fleet & documents, areas/places/routes, cargo types & demo rate card, leads), `load-board.ts` (trucking partners, board posts), `logistics-seed.ts` (logistics generator), `seed.ts` (trading generator)
-- `lib/` — `logistics.ts` (stop planning, trip metrics, billing, fleet status), `load-board.ts` (board statuses, capacity views, matching, share messages), `store.ts` (Zustand actions), `calc.ts` / `selectors.ts` (trading math), `format.ts`, `nav.ts`, `domain.ts`
-- `hooks/use-data.ts` — memoized derived data (invoices, trip metrics, customer stats, board capacity views and matches)
+- `data/` — reference data (customers, fleet & documents, areas/places/routes, cargo types & demo rate card, leads), `load-board.ts` (trucking partners, board posts), `backhaul-marketplace.ts` (listings, shipper requests), `logistics-seed.ts` (logistics generator), `seed.ts` (trading generator)
+- `lib/` — `logistics.ts` (stop planning, trip metrics, billing, fleet status), `load-board.ts` (board statuses, capacity views, matching, share messages), `backhaul-marketplace.ts` (listing views, request statuses, instant quotes, fit checks), `store.ts` (Zustand actions), `calc.ts` / `selectors.ts` (trading math), `format.ts`, `nav.ts`, `domain.ts`
+- `hooks/use-data.ts` — memoized derived data (invoices, trip metrics, customer stats, board capacity views and matches, marketplace listing views)
 - `components/ui` — shadcn-style primitives; `components/shared` — PageHeader, KPICard, StatusBadge, LoadTypeBadge, JobSourceBadge, BoardSourceBadge, Timeline, CapacityBar, TripCard, TruckStatusCard, PodCard…; `components/data-table`, `components/charts`
 - `features/<module>/` — page-level views; `app/(internal)`, `app/(public)`, `app/driver`, `app/print` — thin route files
 - `scripts/` — `check-seed.ts`, `check-flows.ts`

@@ -134,12 +134,14 @@ export interface FutureModule {
   icon: LucideIcon;
   summary: string;
   bullets: string[];
+  /** Has a working preview page at /future/<slug> instead of the roadmap card. */
+  preview?: boolean;
 }
 
 export const FUTURE_MODULES: FutureModule[] = [
   { slug: "marketplace", label: "Marketplace", icon: Store, summary: "Let verified buyers across Luzon browse and order from multiple Quezon suppliers through one storefront.", bullets: ["Multi-supplier listings with verified sellers", "Escrow-style payment release on delivery", "Buyer ratings and dispute handling"] },
   { slug: "supplier-bidding", label: "Supplier Bidding", icon: Gavel, summary: "Post tomorrow's backhaul requirements and let suppliers bid on price and pickup time.", bullets: ["Daily RFQs to Valenzuela, Divisoria and Laguna suppliers", "Rank bids by landed cost incl. detour", "One-click conversion of winning bids to POs"] },
-  { slug: "backhaul-marketplace", label: "Backhaul Marketplace", icon: Waypoints, summary: "Publish unused return capacity on Manila → Lucena legs for other traders and shippers to book.", bullets: ["Publish open kg per return leg", "Instant quotes for third-party cargo", "Separate manifests and waybills"] },
+  { slug: "backhaul-marketplace", label: "Backhaul Marketplace", icon: Waypoints, summary: "Publish unused return capacity on Manila → Lucena legs for other traders and shippers to book.", bullets: ["Publish open kg per return leg", "Instant quotes for third-party cargo", "Separate manifests and waybills"], preview: true },
   { slug: "live-gps", label: "Live GPS", icon: Satellite, summary: "Real-time truck location and automatic ETAs to customers via SMS/Messenger. Today, location comes from the latest stop update.", bullets: ["GPS device or driver-phone tracking", "Geofenced arrival and departure events", "Customer ETA links"] },
   { slug: "temperature-monitoring", label: "Temperature Monitoring", icon: Thermometer, summary: "Cold-chain sensors inside the closed vans to protect sugpo and shellfish quality.", bullets: ["In-van temperature and door-open alerts", "Per-trip cold-chain report attached to the DR", "Spoilage root-cause analysis"] },
   { slug: "route-optimization", label: "Route Optimization", icon: Route, summary: "Suggest the best drop sequence considering truck bans, market hours and traffic.", bullets: ["MMDA truck-ban aware sequencing", "Receiving-window constraints per customer", "Fuel and toll cost estimates"] },

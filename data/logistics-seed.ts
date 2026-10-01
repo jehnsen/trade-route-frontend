@@ -183,6 +183,8 @@ interface JobSpec {
   instructions?: string;
   quoteId?: string;
   assignedAt?: string;
+  /** Fixed confirmation time; otherwise a few minutes after booking. */
+  confirmedAt?: string;
 }
 
 function makeJob(spec: JobSpec) {
@@ -224,7 +226,7 @@ function makeJob(spec: JobSpec) {
     createdAt,
     history: [{ at: createdAt, label: source === "Customer Portal" ? "Booking submitted via Customer Portal" : `Booking received (${source})`, by: bookedBy(source, c) }],
   };
-  if (!["Inquiry", "Quoted"].includes(spec.status)) job.history.push({ at: plusMin(createdAt, rint(6, 50)), label: "Booking confirmed", by: staffById(c.salespersonId)!.name, note: "Cargo, pickup time and freight rate confirmed with customer." });
+  if (!["Inquiry", "Quoted"].includes(spec.status)) job.history.push({ at: spec.confirmedAt ?? plusMin(createdAt, rint(6, 50)), label: "Booking confirmed", by: staffById(c.salespersonId)!.name, note: "Cargo, pickup time and freight rate confirmed with customer." });
   if (spec.tripId) job.history.push({ at: spec.assignedAt ?? plusMin(createdAt, rint(60, 180)), label: `Assigned to ${spec.tripId}`, by: DISPATCHER });
   jobs.push(job);
   jobIndex.set(id, job);
@@ -610,6 +612,7 @@ interface Scripted {
   pickup?: Place;
   dropoff?: Place;
   quoteId?: string;
+  confirmedAt?: string;
 }
 function scripted(date: string, trip: Trip | undefined, leg: Leg, s: Scripted) {
   const c = customerById(s.customerId)!;
@@ -634,6 +637,7 @@ function scripted(date: string, trip: Trip | undefined, leg: Leg, s: Scripted) {
     instructions: s.instructions,
     quoteId: s.quoteId,
     assignedAt: trip ? plusMin(s.createdAt, 90) : undefined,
+    confirmedAt: s.confirmedAt,
   });
 }
 
@@ -670,6 +674,8 @@ const t02Out: Scripted[] = [
 for (const s of t02Out) scripted(TODAY, t02, "outbound", s);
 scripted(TODAY, t02, "return", { no: "017", customerId: "CUS-051", cargo: [["feeds", 1500]], freight: 7500, source: "Phone", status: "Assigned", createdAt: "2026-09-23T10:40", req: "21:30", pickup: CALAMBA_FEEDS, loadType: "Backhaul" });
 scripted(TODAY, t02, "return", { no: "018", customerId: "CUS-050", cargo: [["rice", 800]], freight: 4000, source: "Phone", status: "Assigned", createdAt: "2026-09-24T09:30", req: "21:00", pickup: STA_ROSA, loadType: "Backhaul" });
+// Requested on the Backhaul Marketplace (BKR-260925-001) and confirmed by dispatch.
+scripted(TODAY, t02, "return", { no: "022", customerId: "CUS-053", cargo: [["feeds", 1000]], freight: 4500, source: "Backhaul Marketplace", status: "Assigned", createdAt: "2026-09-25T06:52", confirmedAt: "2026-09-25T07:04", req: "21:30", pickup: CALAMBA_FEEDS, loadType: "Third-Party", notes: "Requested through the Backhaul Marketplace (BKR-260925-001). First booking — COD." });
 
 // Unassigned today — dispatch opportunities
 scripted(TODAY, undefined, "outbound", { no: "019", customerId: "CUS-029", cargo: [["tahong", 800], ["bangus", 400]], freight: 12000, source: "Sales Staff", status: "Awaiting Dispatch", createdAt: "2026-09-25T06:20", req: "16:00", quoteId: "QT-260915-001", notes: "Arnold called at 6:15 AM — can Truck 02 add General Trias after Imus?" });

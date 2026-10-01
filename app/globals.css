@@ -540,6 +540,336 @@
   }
 }
 
+/* Shipment detail: operational information beside billing and assignment. */
+.job-detail-workspace {
+  container-type: inline-size;
+}
+
+.job-detail-workspace .page-header h1 {
+  font-size: clamp(1.4rem, 2.3vw, 1.875rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.job-detail-workspace [data-slot="card-header"] {
+  padding-block: 1.125rem;
+  align-items: center;
+}
+
+.job-route-card {
+  container-type: inline-size;
+  border-top: 3px solid #405e58;
+}
+
+.job-detail-workspace .page-header > div:last-child {
+  align-items: flex-start;
+}
+
+.job-cargo-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 520px) {
+  .job-route-stops {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .job-cargo-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@container (min-width: 860px) {
+  .job-detail-grid {
+    grid-template-columns: minmax(0, 1.85fr) minmax(300px, 1fr);
+  }
+}
+
+/* Job register: readable shipment groups with secondary filters on demand. */
+.jobs-workspace {
+  container-type: inline-size;
+}
+
+.jobs-workspace .page-header h1 {
+  font-size: clamp(1.75rem, 2.5vw, 2rem);
+}
+
+.job-list-metric {
+  border-inline-start: 1px solid var(--border);
+}
+
+.job-list-metric > div:first-child {
+  color: var(--muted-foreground);
+}
+
+.job-list-metric-featured {
+  border: 0;
+  background: #203a3c;
+  color: #fff;
+}
+
+.job-list-metric-featured > div:first-child {
+  color: #d2e6df;
+}
+
+.jobs-status-tabs [data-state="active"] {
+  border-color: var(--border);
+  color: var(--primary);
+}
+
+.jobs-register table {
+  table-layout: fixed;
+}
+
+.jobs-register th {
+  background: #f8f9fb;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.jobs-register td {
+  padding-block: 18px;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 899px) {
+  .jobs-register > .md\:hidden {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .jobs-register > .md\:block {
+    display: none;
+  }
+}
+
+@container (max-width: 559px) {
+  .jobs-register > .md\:hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1023px) {
+  .job-list-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .job-list-metric:nth-child(3) {
+    border-inline-start: 0;
+  }
+}
+
+/* Quote register and follow-up workspace. */
+.quotes-workspace {
+  container-type: inline-size;
+}
+
+.quotes-workspace .page-header h1 {
+  font-size: clamp(1.75rem, 2.5vw, 2rem);
+}
+
+.quote-metric {
+  border-inline-start: 1px solid var(--border);
+}
+
+.quote-metric > div:first-child {
+  color: var(--muted-foreground);
+}
+
+.quote-metric-featured {
+  border: 0;
+  background: #203a3c;
+  color: #fff;
+}
+
+.quote-metric-featured > div:first-child {
+  color: #d2e6df;
+}
+
+.quotes-status-tabs [data-state="active"] {
+  border-color: var(--border);
+  color: var(--primary);
+}
+
+.quotes-register table {
+  table-layout: fixed;
+}
+
+.quotes-register th {
+  background: #f8f9fb;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.quotes-register td {
+  padding-block: 18px;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 899px) {
+  .quotes-register > .md\:hidden {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .quotes-register > .md\:block {
+    display: none;
+  }
+}
+
+@container (max-width: 559px) {
+  .quotes-register > .md\:hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1023px) {
+  .quote-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .quote-metric:nth-child(3) {
+    border-inline-start: 0;
+  }
+}
+
+/* Expense overview and ledger: full-width records, responsive cards. */
+.expenses-workspace {
+  container-type: inline-size;
+}
+
+.expenses-workspace .page-header h1 {
+  font-size: clamp(1.75rem, 2.5vw, 2rem);
+}
+
+.expense-metric {
+  border-inline-start: 1px solid var(--border);
+}
+
+.expense-metric > div:first-child {
+  color: var(--muted-foreground);
+}
+
+.expense-metric-featured {
+  border: 0;
+  background: #203a3c;
+  color: #fff;
+}
+
+.expense-metric-featured > div:first-child {
+  color: #d2e6df;
+}
+
+.expenses-view-tabs [data-state="active"] {
+  border-color: var(--border);
+  color: var(--primary);
+}
+
+.expenses-register table {
+  table-layout: fixed;
+}
+
+.expenses-register th {
+  background: #f8f9fb;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.expenses-register td {
+  padding-block: 18px;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 899px) {
+  .expenses-register > .md\:hidden {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .expenses-register > .md\:block {
+    display: none;
+  }
+}
+
+@container (max-width: 559px) {
+  .expenses-register > .md\:hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1023px) {
+  .expense-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .expense-metric:nth-child(3) {
+    border-inline-start: 0;
+  }
+}
+
+/* Lead management: compact records and a contained, scrollable pipeline. */
+.leads-workspace {
+  container-type: inline-size;
+}
+
+.leads-workspace .page-header h1 {
+  font-size: clamp(1.75rem, 2.5vw, 2rem);
+}
+
+.lead-metric {
+  border-inline-start: 1px solid var(--border);
+}
+
+.lead-metric > div:first-child {
+  color: var(--muted-foreground);
+}
+
+.lead-metric-featured {
+  border: 0;
+  background: #203a3c;
+  color: #fff;
+}
+
+.lead-metric-featured > div:first-child {
+  color: #d2e6df;
+}
+
+.lead-view-tabs [data-state="active"] {
+  border-color: var(--border);
+  color: var(--primary);
+}
+
+.lead-register th {
+  background: #f8f9fb;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.lead-register td {
+  padding-block: 16px;
+}
+
+.lead-pipeline {
+  scrollbar-color: #a6b8b1 #e8edeb;
+}
+
+.lead-stage {
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.lead-pipeline-card:focus-visible {
+  outline-offset: -3px;
+}
+
+@media (max-width: 1023px) {
+  .lead-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .lead-metric:nth-child(3) {
+    border-inline-start: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .admin-shell *,
   .admin-shell *::before,

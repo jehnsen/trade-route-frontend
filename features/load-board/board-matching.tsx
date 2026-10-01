@@ -176,7 +176,7 @@ function MatchCard({ match, side, onBook }: { match: BoardMatch; side: "load" | 
 }
 
 // ─── Accept match → Logistics Job (+ Trip) ─────────────────────────────────
-const PAYMENT_TERMS: [PaymentTerms, ...PaymentTerms[]] = ["COD", "Credit 7 Days", "Credit 15 Days", "Credit 30 Days", "50% Down, Balance on Arrival"];
+export const PAYMENT_TERMS: [PaymentTerms, ...PaymentTerms[]] = ["COD", "Credit 7 Days", "Credit 15 Days", "Credit 30 Days", "50% Down, Balance on Arrival"];
 
 const bookSchema = z
   .object({

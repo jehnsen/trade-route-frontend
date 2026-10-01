@@ -5,6 +5,7 @@ import { useAppStore } from "@/lib/store";
 import { LIFETIME_BASELINE } from "@/data/finance";
 import { getCustomerStats, getInvoiceMap, getInvoices, getTripMetricsMap } from "@/lib/logistics";
 import { getBoardMatches, getCapacityViews } from "@/lib/load-board";
+import { getListingViews } from "@/lib/backhaul-marketplace";
 import { getDailyRevenue, getProductSales, getSalesCustomerStats, getSalesInvoiceMap, getSalesInvoices, getStockMap } from "@/lib/selectors";
 import { memoizeLast } from "@/lib/utils";
 
@@ -49,6 +50,15 @@ export function useBoardMatches() {
   const loads = useAppStore((s) => s.boardLoads);
   const jobs = useAppStore((s) => s.jobs);
   return getBoardMatches(loads, useCapacityViews(), jobs);
+}
+
+/** Backhaul marketplace: today's/tomorrow's return legs and every listed leg, keyed by trip id. */
+export function useListingViews() {
+  const trips = useAppStore((s) => s.trips);
+  const listings = useAppStore((s) => s.backhaulListings);
+  const requests = useAppStore((s) => s.backhaulRequests);
+  const jobs = useAppStore((s) => s.jobs);
+  return getListingViews(trips, listings, requests, useTripMetrics(), jobs);
 }
 
 const toMap = <T extends { id: string }>() => memoizeLast((rows: T[]) => new Map(rows.map((r) => [r.id, r])));

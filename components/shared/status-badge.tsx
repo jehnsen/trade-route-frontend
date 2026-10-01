@@ -18,6 +18,8 @@ import {
   PackageCheck,
   PackageOpen,
   Pause,
+  Radio,
+  Inbox,
   Search,
   Send,
   Timer,
@@ -115,6 +117,12 @@ const MAP: Record<string, Spec> = {
   "Strong Match": ["success", CheckCircle2],
   "Possible Match": ["warning", CircleDashed],
   "Poor Fit": ["muted", XCircle],
+  // Backhaul marketplace
+  Published: ["success", Radio],
+  Paused: ["warning", Pause],
+  Closed: ["muted", Ban],
+  "Not Listed": ["outline", CircleDashed],
+  Requested: ["warning", Inbox],
   // Customers / generic
   active: ["success"],
   new: ["info"],

@@ -100,7 +100,7 @@ export interface CapacityView {
 }
 
 const unique = <T,>(xs: T[]) => [...new Set(xs)];
-const isQuezon = (id: AreaId) => areaById(id).region === "Quezon Province";
+export const isQuezon = (id: AreaId) => areaById(id).region === "Quezon Province";
 
 /** One leg of one of our trips: where it starts and ends, the areas it passes and when. */
 export function tripLeg(trip: Trip, leg: Leg) {
@@ -255,7 +255,7 @@ function usesCorridor(v: CapacityView) {
  * When the truck is in an area on this leg. Off-route areas are timed from the last route
  * area the truck passes before reaching them (e.g. Calamba after the QC pickup, heading home).
  */
-export function etaAt(v: CapacityView, area: AreaId) {
+export function etaAt(v: Pick<CapacityView, "origin" | "destination" | "routeAreas" | "areaEta" | "departureAt">, area: AreaId) {
   const known = v.areaEta[area];
   if (known) return known;
   const d = areaById(area).driveMinutes;

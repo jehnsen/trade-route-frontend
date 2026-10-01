@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Ban, CheckCircle2, CircleDollarSign, FileText, MapPin, Phone, Truck, UserRound, Wallet } from "lucide-react";
+import { ArrowUpRight, Ban, CheckCircle2, CircleDollarSign, ClipboardList, FileText, History, Info, MapPin, MoreHorizontal, Package, Phone, Route, Truck, UserRound, Wallet } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useInvoiceMap, useTripMetrics } from "@/hooks/use-data";
 import { staffById } from "@/data/company";
@@ -15,7 +15,7 @@ import { fmtDateTime, fmtDay, fmtTime, kg, peso, unitQty } from "@/lib/format";
 import { sumBy } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Separator } from "@/components/ui/primitives";
-import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/overlays";
 import { CapacityBar, EmptyState, JobSourceBadge, LineItem, PageHeader, Stat, Timeline, type TimelineItem } from "@/components/shared/common";
 import { LegBadge, LoadTypeBadge, ReceivableBadge, StatusBadge } from "@/components/shared/status-badge";
 import { PodCard } from "@/components/shared/pod";
@@ -31,6 +31,7 @@ export function JobDetail({ id }: { id: string }) {
   const allPayments = useAppStore((s) => s.payments);
   const quotes = useAppStore((s) => s.quotes);
   const boardPost = useAppStore((s) => s.boardLoads.find((l) => !!id && l.jobId === id));
+  const marketplaceRequest = useAppStore((s) => s.backhaulRequests.find((r) => !!id && r.jobId === id));
   const customer = useAppStore((s) => s.customers.find((c) => c.id === job?.customerId));
   const setStatus = useAppStore((s) => s.setJobStatus);
   const invoice = useInvoiceMap().get(id);
@@ -63,21 +64,20 @@ export function JobDetail({ id }: { id: string }) {
     .map((t) => ({ ...t, at: fmtDateTime(t.at), state: t.title.startsWith("Issue") || t.title.includes("failed") || t.title.includes("cancelled") ? ("failed" as const) : ("done" as const) }));
 
   return (
-    <>
+    <div className="job-detail-workspace ops-enter">
       <PageHeader
         breadcrumbs={[{ label: "Logistics Jobs", href: "/jobs" }, { label: job.id }]}
         title={
           <span className="flex flex-wrap items-center gap-2">
-            {job.id} <StatusBadge status={job.status} /> <LegBadge leg={job.leg} />
+            {job.id}
           </span>
         }
         description={
-          <>
-            <Link href={`/customers/${customer.id}`} className="font-medium text-foreground hover:underline">
-              {customer.name}
-            </Link>{" "}
-            · {job.pickup.name} → {job.dropoff.name} · pickup {fmtDay(job.pickupAt)} {fmtTime(job.pickupAt)}
-          </>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Link href={`/customers/${customer.id}`} className="inline-flex items-center gap-1.5 font-medium text-foreground hover:text-primary hover:underline">{customer.name}<ArrowUpRight className="size-3.5" /></Link>
+            <StatusBadge status={job.status} className="rounded-full text-[11px]" />
+            <LegBadge leg={job.leg} />
+          </div>
         }
         actions={
           <>
@@ -97,104 +97,89 @@ export function JobDetail({ id }: { id: string }) {
                 <Truck /> {job.tripId ? "Change trip" : "Assign to trip"}
               </Button>
             )}
-            {job.status !== "Cancelled" && job.status !== "Inquiry" && payStatus !== "Paid" && (
-              <Button size="sm" variant="outline" onClick={() => setDialog("pay")}>
-                <Wallet /> Record payment
-              </Button>
-            )}
+            <Button variant="outline" size="sm" asChild><Link href={`/loads?q=${job.id}`}><Package /> View cargo</Link></Button>
             {canCancel && (
-              <Button size="sm" variant="ghost" className="text-danger" onClick={() => setDialog("cancel")}>
-                <Ban /> Cancel
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild><Button variant="outline" size="icon-sm" aria-label="More job actions"><MoreHorizontal /></Button></DropdownMenuTrigger>
+                <DropdownMenuContent align="end"><DropdownMenuItem variant="destructive" onSelect={() => setDialog("cancel")}><Ban /> Cancel job</DropdownMenuItem></DropdownMenuContent>
+              </DropdownMenu>
             )}
           </>
         }
       />
-      {job.notes && <div className="mb-4 rounded-lg border border-[oklch(0.85_0.08_85)] bg-warning-soft px-4 py-2.5 text-sm">{job.notes}</div>}
-      {job.status === "Cancelled" && job.cancelReason && <div className="mb-4 rounded-lg border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm">Cancelled — {job.cancelReason}</div>}
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
+      {job.notes && <div className="mb-5 flex items-start gap-2 rounded-lg border border-warning/20 bg-warning-soft px-4 py-3 text-xs leading-relaxed"><Info className="mt-0.5 size-4 shrink-0" /><div><span className="mr-1 font-semibold">Booking note.</span>{job.notes}</div></div>}
+      {job.status === "Cancelled" && job.cancelReason && <div className="mb-5 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger-soft px-4 py-3 text-xs text-danger"><Ban className="size-4 shrink-0" />Cancelled — {job.cancelReason}</div>}
+      <div className="job-detail-summary mb-6 grid grid-cols-2 overflow-hidden rounded-xl border bg-card">
+        <div className="bg-[#203a3c] p-4 text-white sm:px-5"><div className="flex items-center gap-2 text-[11px] text-white/75"><Package className="size-3.5" /> Gross cargo weight</div><div className="mt-2 text-2xl font-semibold tracking-tight tabular">{kg(job.weightKg)}</div><div className="mt-1 text-[11px] text-white/75">{loads.length} {loads.length === 1 ? "load" : "loads"} · {job.cargoCategory}</div></div>
+        <div className="p-4 sm:px-5"><div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Truck className="size-3.5" /> Truck requirement</div><div className="mt-2 text-sm font-semibold leading-relaxed">{job.truckRequirement || "Not specified"}</div><div className="mt-1 text-[11px] text-muted-foreground">{trip ? `${truckById(trip.truckId).code} assigned` : "Vehicle not yet assigned"}</div></div>
+      </div>
+      <div className="job-detail-grid grid items-start gap-5">
+        <div className="grid min-w-0 gap-5">
+        <Card className="job-route-card overflow-hidden">
           <CardHeader>
-            <CardTitle>Booking</CardTitle>
-            <Link href={`/customers/${customer.id}`} className="text-xs font-medium text-primary hover:underline">
-              Customer profile
-            </Link>
+            <CardTitle className="flex items-center gap-2"><Route className="size-4 text-primary" /> Route & schedule</CardTitle>
+            <span className="text-[11px] text-muted-foreground">{areaName(job.pickup.areaId)} → {areaName(job.dropoff.areaId)}</span>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 text-sm">
-            <Stat label="Customer" value={customer.name} sub={`${customer.type} · ${areaName(customer.areaId)}`} className="col-span-2" />
-            <div>
-              <div className="text-xs text-muted-foreground">Source</div>
-              <div className="mt-1">
-                <JobSourceBadge source={job.source} />
-              </div>
-            </div>
-            <Stat label="Booked" value={fmtDateTime(job.createdAt)} sub={job.history[0]?.by} />
-            <Stat label="Sales rep" value={staffById(job.salespersonId)?.name ?? "—"} />
-            <Stat label="Quote" value={quote ? <Link href={`/quotes?q=${quote.id}`} className="text-primary hover:underline">{quote.id}</Link> : "—"} sub={quote ? `${quote.status} · valid to ${fmtDay(quote.validUntil)}` : undefined} />
-            {boardPost && <Stat label="Load Board post" value={<Link href={`/load-board?q=${boardPost.id}`} className="text-primary hover:underline">{boardPost.id}</Link>} sub={`${boardPost.source}${boardPost.sourceReference ? ` · ${boardPost.sourceReference}` : ""}`} className="col-span-2" />}
-            <Stat label="Truck requirement" value={job.truckRequirement} className="col-span-2" />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Route & schedule</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 text-sm">
-            <div className="flex gap-2">
-              <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
-              <div>
-                <div className="text-xs text-muted-foreground">Pickup · {fmtDay(job.pickupAt)} {fmtTime(job.pickupAt)}</div>
-                <div className="font-medium">{job.pickup.name}</div>
-                {job.pickup.address && <div className="text-xs text-muted-foreground">{job.pickup.address}</div>}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <MapPin className="mt-0.5 size-4 shrink-0 text-[var(--chart-3)]" />
-              <div>
-                <div className="text-xs text-muted-foreground">Drop-off · required by {fmtDay(job.requiredBy)} {fmtTime(job.requiredBy)}</div>
-                <div className="font-medium">{job.dropoff.name}</div>
-                {job.dropoff.address && <div className="text-xs text-muted-foreground">{job.dropoff.address}</div>}
-              </div>
-            </div>
-            <Separator />
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-start gap-2">
-                <UserRound className="mt-0.5 size-4 text-muted-foreground" />
-                <div>
-                  <div className="font-medium">{job.consignee.name}</div>
-                  <div className="text-xs text-muted-foreground">Receiver · {job.consignee.phone}</div>
+          <CardContent>
+            <div className="job-route-stops grid gap-4">
+              {[
+                { label: "Pickup", place: job.pickup, at: job.pickupAt, number: "01" },
+                { label: "Delivery deadline", place: job.dropoff, at: job.requiredBy, number: "02" },
+              ].map((stop) => (
+                <div key={stop.number} className="rounded-lg border border-primary/10 bg-accent/30 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-2"><span className="text-[10px] font-semibold tracking-wider text-primary uppercase">{stop.label}</span><span className="font-mono text-[10px] text-muted-foreground">{stop.number}</span></div>
+                  <div className="flex items-baseline gap-2"><span className="text-lg font-semibold tracking-tight tabular">{fmtTime(stop.at)}</span><span className="text-[11px] text-muted-foreground">{fmtDay(stop.at)}</span></div>
+                  <div className="mt-3 flex items-start gap-2 border-t border-primary/10 pt-3"><MapPin className="mt-0.5 size-3.5 shrink-0 text-primary" /><div className="min-w-0"><div className="text-[13px] font-semibold leading-relaxed">{stop.place.name}</div>{stop.place.address && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{stop.place.address}</p>}</div></div>
                 </div>
-              </div>
-              <Button variant="outline" size="icon-sm" asChild>
-                <a href={`tel:${job.consignee.phone.replace(/\s/g, "")}`} aria-label={`Call ${job.consignee.name}`}>
-                  <Phone />
-                </a>
-              </Button>
+              ))}
             </div>
-            {job.instructions && <div className="rounded-md bg-muted/60 px-2.5 py-1.5 text-xs">{job.instructions}</div>}
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border px-3 py-3">
+              <div className="flex items-center gap-3"><span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"><UserRound className="size-4" /></span><div><div className="text-[10px] text-muted-foreground">Receiving contact</div><div className="mt-0.5 text-xs font-semibold">{job.consignee.name}</div><div className="mt-0.5 text-[11px] text-muted-foreground">{job.consignee.phone}</div></div></div>
+              <Button variant="outline" size="sm" asChild><a href={`tel:${job.consignee.phone.replace(/\s/g, "")}`} aria-label={`Call ${job.consignee.name}`}><Phone /><span className="hidden sm:inline">Call receiver</span></a></Button>
+            </div>
+            {job.instructions && <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-xs leading-relaxed"><Info className="mt-0.5 size-3.5 shrink-0 text-primary" /><div><span className="mb-1 block font-semibold">Delivery instructions</span><span className="text-muted-foreground">{job.instructions}</span></div></div>}
           </CardContent>
         </Card>
-
-        <Card>
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <div><CardTitle className="flex items-center gap-2"><Package className="size-4 text-primary" /> Cargo manifest</CardTitle><CardDescription>{loads.length} {loads.length === 1 ? "load" : "loads"} · {job.cargoCategory}</CardDescription></div>
+            <Button variant="ghost" size="sm" className="text-xs" asChild><Link href={`/loads?q=${job.id}`}>Manage loads <ArrowUpRight /></Link></Button>
+          </CardHeader>
+          <ul className="divide-y border-t">
+            {loads.map((load) => (
+              <li key={load.id} className="job-cargo-row grid gap-3 px-5 py-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/30 text-muted-foreground"><Package className="size-4" /></span>
+                  <div className="min-w-0"><Link href={`/loads?q=${load.id}`} className="text-[13px] font-semibold leading-relaxed hover:text-primary hover:underline">{load.cargoDescription}</Link><div className="mt-1 font-mono text-[10px] text-muted-foreground">{load.id}</div>{load.handlingNotes && <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{load.handlingNotes}</p>}<div className="mt-2 flex flex-wrap gap-1.5"><LoadTypeBadge type={load.type} className="text-[10px]" /><StatusBadge status={load.status} className="text-[10px]" /></div></div>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-xs tabular sm:block sm:text-right"><div className="font-semibold">{kg(load.weightKg)}</div><div className="mt-1 text-[11px] text-muted-foreground">{unitQty(load.quantity, load.unit)}</div></div>
+              </li>
+            ))}
+            {loads.length === 0 && <li className="px-5 py-6 text-xs text-muted-foreground">No loads recorded for this job yet.</li>}
+          </ul>
+          <div className="flex items-center justify-between border-t bg-muted/30 px-5 py-3 text-xs"><span className="text-muted-foreground">Total manifest weight <span className="text-[10px]">· gross</span></span><span className="font-semibold tabular">{kg(sumBy(loads, (load) => load.weightKg))}</span></div>
+        </Card>
+        </div>
+        <div className="grid min-w-0 gap-5">
+        <Card className="overflow-hidden">
           <CardHeader>
             <div>
-              <CardTitle>Charges & billing</CardTitle>
-              <CardDescription>Invoiced on delivery · {job.paymentTerms}</CardDescription>
+              <CardTitle className="flex items-center gap-2"><Wallet className="size-4 text-primary" /> Charges & billing</CardTitle>
+              <CardDescription>Freight and additional charges</CardDescription>
             </div>
             <StatusBadge status={payStatus} icon={false} />
           </CardHeader>
-          <CardContent className="grid gap-2 text-sm">
+          <div className="mx-5 mb-5 rounded-lg bg-[#203a3c] p-4 text-white">
+            <div className="text-[11px] font-medium text-white/75">Total freight & charges</div>
+            <div className="mt-2 text-[30px] leading-none font-semibold tracking-tight tabular">{peso(total)}</div>
+            <div className="mt-3 flex items-center gap-1.5 text-[11px] text-white/75"><FileText className="size-3" />{job.paymentTerms} · {invoice ? "Invoice issued" : "Invoice issued on delivery"}</div>
+          </div>
+          <CardContent className="grid gap-3 text-sm">
             <LineItem label="Freight charge" value={peso(job.freightCharge)} />
             {job.additionalCharges.map((c) => (
               <LineItem key={c.label} label={c.label} value={peso(c.amount)} muted />
             ))}
             {job.additionalCharges.length === 0 && <LineItem label="Additional charges" value={peso(0)} muted />}
-            <div className="flex items-baseline justify-between border-t pt-2">
-              <span className="font-semibold">Total</span>
-              <span className="text-xl font-semibold tabular">{peso(total)}</span>
-            </div>
             <Separator className="my-1" />
             {invoice ? (
               <>
@@ -208,74 +193,16 @@ export function JobDetail({ id }: { id: string }) {
                 Not yet invoiced{paid > 0 ? ` · ${peso(paid)} received as advance` : ""}. {additionalTotal(job) > 0 ? "Additional charges are billed with the freight." : ""}
               </div>
             )}
+            {job.status !== "Cancelled" && job.status !== "Inquiry" && payStatus !== "Paid" && (
+              <Button size="sm" className="mt-2 w-full" onClick={() => setDialog("pay")}>
+                <Wallet /> Record payment
+              </Button>
+            )}
           </CardContent>
         </Card>
-      </div>
-
-      <div className="mt-4 grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <div>
-              <CardTitle>Cargo / loads</CardTitle>
-              <CardDescription>
-                {loads.length} load{loads.length === 1 ? "" : "s"} · {kg(job.weightKg)} gross · {job.cargoCategory}
-              </CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`/loads?q=${job.id}`}>Open in Loads</Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="px-0 sm:px-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-4 sm:pl-5">Load</TableHead>
-                    <TableHead>Cargo</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Weight</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loads.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell className="pl-4 font-mono text-xs sm:pl-5">{l.id}</TableCell>
-                      <TableCell>
-                        <div>{l.cargoDescription}</div>
-                        {l.handlingNotes && <div className="max-w-[260px] truncate text-xs text-muted-foreground">{l.handlingNotes}</div>}
-                      </TableCell>
-                      <TableCell className="text-right tabular">
-                        {unitQty(l.quantity, l.unit)}
-                      </TableCell>
-                      <TableCell className="text-right tabular">{kg(l.weightKg)}</TableCell>
-                      <TableCell>
-                        <LoadTypeBadge type={l.type} />
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={l.status} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-                <TableFooter>
-                  <TableRow>
-                    <TableCell className="pl-4 sm:pl-5" colSpan={3}>
-                      Total
-                    </TableCell>
-                    <TableCell className="text-right tabular">{kg(sumBy(loads, (l) => l.weightKg))}</TableCell>
-                    <TableCell colSpan={2} />
-                  </TableRow>
-                </TableFooter>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader>
-            <CardTitle>Trip & delivery</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Truck className="size-4 text-primary" /> Trip & delivery</CardTitle>
             {delivery && (
               <Link href={`/deliveries/${delivery.id}`} className="text-xs font-medium text-primary hover:underline">
                 {delivery.id}
@@ -318,8 +245,9 @@ export function JobDetail({ id }: { id: string }) {
               <p className="text-muted-foreground">Delivered before trip tracking (migrated record).</p>
             ) : (
               <EmptyState
+                className="border-0 bg-muted/40 px-4 py-6 [&>div]:text-xs"
                 icon={Truck}
-                title="Not on a trip yet"
+                title="Awaiting trip assignment"
                 description={job.status === "Inquiry" || job.status === "Quoted" ? "Confirm the booking first, then assign it on the Dispatch board." : "Assign this job to a trip with enough capacity."}
                 action={
                   canAssign ? (
@@ -332,13 +260,36 @@ export function JobDetail({ id }: { id: string }) {
             )}
           </CardContent>
         </Card>
+        </div>
       </div>
-
-      <div className="mt-4 grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
+      <div className="job-detail-grid mt-5 grid items-start gap-5">
+        <div className="grid min-w-0 gap-5">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ClipboardList className="size-4 text-primary" /> Booking details</CardTitle>
+            <Link href={`/customers/${customer.id}`} className="text-xs font-medium text-primary hover:underline">
+              Customer profile <ArrowUpRight className="inline size-3" />
+            </Link>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-x-6 gap-y-5 text-sm">
+            <Stat label="Customer" value={customer.name} sub={`${customer.type} · ${areaName(customer.areaId)}`} className="col-span-2" />
+            <div>
+              <div className="text-xs text-muted-foreground">Source</div>
+              <div className="mt-1">
+                <JobSourceBadge source={job.source} />
+              </div>
+            </div>
+            <Stat label="Booked" value={fmtDateTime(job.createdAt)} sub={job.history[0]?.by} />
+            <Stat label="Sales rep" value={staffById(job.salespersonId)?.name ?? "—"} />
+            <Stat label="Quote" value={quote ? <Link href={`/quotes?q=${quote.id}`} className="text-primary hover:underline">{quote.id}</Link> : "—"} sub={quote ? `${quote.status} · valid to ${fmtDay(quote.validUntil)}` : undefined} />
+            {boardPost && <Stat label="Load Board post" value={<Link href={`/load-board?q=${boardPost.id}`} className="text-primary hover:underline">{boardPost.id}</Link>} sub={`${boardPost.source}${boardPost.sourceReference ? ` · ${boardPost.sourceReference}` : ""}`} className="col-span-2" />}
+            {marketplaceRequest && <Stat label="Marketplace request" value={<Link href={`/future/backhaul-marketplace?tab=requests&q=${marketplaceRequest.id}`} className="text-primary hover:underline">{marketplaceRequest.id}</Link>} sub={`${marketplaceRequest.shipper.businessName} · instant quote ${peso(marketplaceRequest.quotedFreight)}`} className="col-span-2" />}
+          </CardContent>
+        </Card>
+        <Card>
           <CardHeader>
             <div>
-              <CardTitle>Timeline</CardTitle>
+              <CardTitle className="flex items-center gap-2"><History className="size-4 text-primary" /> Activity timeline</CardTitle>
               <CardDescription>Booking, dispatch, delivery, billing and payments</CardDescription>
             </div>
           </CardHeader>
@@ -346,6 +297,8 @@ export function JobDetail({ id }: { id: string }) {
             <Timeline items={timeline} />
           </CardContent>
         </Card>
+        </div>
+        <div className="grid min-w-0 gap-5">
         <Card>
           <CardHeader>
             <div>
@@ -362,14 +315,14 @@ export function JobDetail({ id }: { id: string }) {
               <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
             ) : (
               payments.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3 rounded-md border p-2.5 text-sm">
+                <div key={p.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3 text-sm">
                   <div>
                     <div className="font-medium">{peso(p.amount)}</div>
                     <div className="text-xs text-muted-foreground">
                       {p.method} · {p.reference}
                     </div>
                   </div>
-                  <div className="text-right text-xs text-muted-foreground">
+                  <div className="text-xs text-muted-foreground">
                     <div className="flex items-center gap-1 font-mono">
                       <FileText className="size-3" /> {p.receiptNo}
                     </div>
@@ -380,11 +333,12 @@ export function JobDetail({ id }: { id: string }) {
             )}
           </CardContent>
         </Card>
+        </div>
       </div>
 
       {dialog === "assign" && <AssignJobDialog job={job} open onOpenChange={(v) => !v && setDialog(null)} />}
       {dialog === "cancel" && <CancelJobDialog job={job} open onOpenChange={(v) => !v && setDialog(null)} />}
       {dialog === "pay" && <RecordPaymentDialog job={job} open onOpenChange={(v) => !v && setDialog(null)} />}
-    </>
+    </div>
   );
 }

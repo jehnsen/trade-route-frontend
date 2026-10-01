@@ -42,7 +42,7 @@ function toPlace(key: string, detail?: string): Place {
   return extra ? (known ? { ...base, address: extra } : { ...base, name: extra, address: `${extra}, ${areaName(base.areaId)}` }) : base;
 }
 
-function CargoChecklist({ value, onChange, idPrefix }: { value: CargoCategory[]; onChange: (v: CargoCategory[]) => void; idPrefix: string }) {
+export function CargoChecklist({ value, onChange, idPrefix }: { value: CargoCategory[]; onChange: (v: CargoCategory[]) => void; idPrefix: string }) {
   return (
     <fieldset className="grid gap-1.5">
       <legend className="mb-1 text-[13px] font-medium">Accepted cargo</legend>

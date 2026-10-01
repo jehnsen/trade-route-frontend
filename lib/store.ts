@@ -8,6 +8,8 @@ import type {
   AvailableCapacity,
   AvailableLoad,
   AvailableLoadStatus,
+  BackhaulBookingRequest,
+  BackhaulListing,
   CapacityStatus,
   CargoCategory,
   CartLine,
@@ -23,6 +25,7 @@ import type {
   JobSource,
   JobStatus,
   Lead,
+  LeadSource,
   LeadStage,
   Leg,
   Load,
@@ -64,13 +67,15 @@ import { VEHICLE_DOCUMENTS, driverById, truckById } from "@/data/fleet";
 import { areaById, LUCENA_WAREHOUSE, routeById } from "@/data/areas";
 import { supplierById } from "@/data/suppliers";
 import { BOARD_CAPACITY, BOARD_LOADS, TRUCKING_PARTNERS } from "@/data/load-board";
-import { bookingLeg, customerTypeFor, leadSourceFor, requiredByFor, truckRequirementFor } from "@/lib/load-board";
+import { BACKHAUL_LISTINGS, BACKHAUL_REQUESTS } from "@/data/backhaul-marketplace";
+import { bookingLeg, customerTypeFor, leadSourceFor, legOpen, requiredByFor, shortArea, truckRequirementFor } from "@/lib/load-board";
+import { listingStatus, marketplaceQuote } from "@/lib/backhaul-marketplace";
 
 import {
   DELIVERY_DONE,
   canAddReturnCargo,
   currentOdometer,
-
+  getTripMetricsMap,
   invoiceIdForJob,
   isTripEditable,
   jobTotal,
@@ -202,6 +207,17 @@ export interface BookBoardLoadInput {
   consignee: { name: string; phone: string };
 }
 
+// Backhaul marketplace inputs
+export type PublishListingInput = Pick<BackhaulListing, "tripId" | "ratePerKg" | "minimumCharge" | "acceptedCargo" | "restrictions">;
+export type NewBackhaulRequestInput = Omit<BackhaulBookingRequest, "id" | "quotedFreight" | "status" | "createdAt" | "respondedAt" | "respondedBy" | "declineReason" | "jobId">;
+export interface ConfirmBackhaulRequestInput {
+  requestId: string;
+  /** Bill-to customer; when empty a new customer is created from the shipper. */
+  customerId?: string;
+  freightCharge: number;
+  paymentTerms: PaymentTerms;
+}
+
 // Trading inputs
 export interface NewOrderInput {
   customerId: string;
@@ -256,6 +272,9 @@ interface DataState {
   truckingPartners: TruckingPartner[];
   boardLoads: AvailableLoad[];
   boardCapacity: AvailableCapacity[];
+  // Backhaul marketplace (preview)
+  backhaulListings: BackhaulListing[];
+  backhaulRequests: BackhaulBookingRequest[];
   // Trading (Phase 2 preview)
   orders: Order[];
   purchaseOrders: PurchaseOrder[];
@@ -312,6 +331,12 @@ interface Actions {
   updateCapacityUsed: (id: string, usedKg: number) => void;
   reserveOnPartnerTruck: (loadId: string, capacityId: string) => void;
   bookBoardLoad: (input: BookBoardLoadInput) => { jobId: string; created: boolean } | undefined;
+  // Backhaul marketplace (preview)
+  publishBackhaulListing: (input: PublishListingInput) => string | undefined;
+  setBackhaulListingStatus: (id: string, status: BackhaulListing["status"]) => void;
+  requestBackhaulSpace: (input: NewBackhaulRequestInput) => string | undefined;
+  confirmBackhaulRequest: (input: ConfirmBackhaulRequestInput) => { jobId: string; created: boolean } | undefined;
+  declineBackhaulRequest: (id: string, reason: string) => void;
   // Notifications
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
@@ -352,6 +377,8 @@ const initialData = (): DataState => ({
   truckingPartners: TRUCKING_PARTNERS,
   boardLoads: BOARD_LOADS,
   boardCapacity: BOARD_CAPACITY,
+  backhaulListings: BACKHAUL_LISTINGS,
+  backhaulRequests: BACKHAUL_REQUESTS,
   orders: ORDERS,
   purchaseOrders: PURCHASE_ORDERS,
   salesPayments: SALES_PAYMENTS,
@@ -468,6 +495,42 @@ export const useAppStore = create<DataState & Actions>()(
           createdAt: at,
         }));
         return { job, loads };
+      };
+
+      /** Save an outside shipper as a new customer — COD until credit review. */
+      const addShipperCustomer = (o: { name: string; contact: { name: string; phone: string }; place: Place; addressLabel: string; category: CargoCategory; paymentTerms: PaymentTerms; leadSource: LeadSource; notes: string }) => {
+        const s = get();
+        const id = `CUS-${String(maxNum(s.customers.map((c) => c.id), /CUS-(\d+)/) + 1).padStart(3, "0")}`;
+        const area = areaById(o.place.areaId);
+        const customer: Customer = {
+          id,
+          name: o.name,
+          type: customerTypeFor(o.category),
+          areaId: area.id,
+          contacts: [{ name: o.contact.name, position: "Shipper", phone: o.contact.phone, primary: true }],
+          addresses: [{ id: `${id}-A1`, label: o.addressLabel, line1: o.place.address ?? o.place.name, barangay: "—", city: area.name, province: area.province, areaId: area.id, receivingHours: "To be confirmed", default: true }],
+          paymentTerms: o.paymentTerms,
+          creditLimit: 0,
+          salespersonId: "ST-02",
+          leadSource: o.leadSource,
+          customerSince: TODAY,
+          preferredProductIds: [],
+          fulfillment: "truck",
+          status: "new",
+          notes: o.notes,
+          deliveryFee: 0,
+          paymentBehavior: "average",
+          frequency: 2,
+        };
+        set({ customers: [...s.customers, customer] });
+        return id;
+      };
+
+      /** Return-leg space left on our trip: configured payload − return kg. */
+      const returnSpace = (tripId: string) => {
+        const s = get();
+        const m = getTripMetricsMap(s.trips, s.jobs, s.loads, s.deliveries, s.expenses).get(tripId);
+        return m ? m.capacityKg - m.returnKg : 0;
       };
 
       return {
@@ -994,31 +1057,17 @@ export const useAppStore = create<DataState & Actions>()(
 
           let customerId = input.customerId || load.customerId;
           if (!customerId) {
-            const cid = `CUS-${String(maxNum(s.customers.map((c) => c.id), /CUS-(\d+)/) + 1).padStart(3, "0")}`;
-            const area = areaById(load.pickup.areaId);
             const partner = load.partnerId ? s.truckingPartners.find((p) => p.id === load.partnerId) : undefined;
-            const customer: Customer = {
-              id: cid,
+            customerId = addShipperCustomer({
               name: input.newCustomerName?.trim() || partner?.name || load.contact.name,
-              type: customerTypeFor(load.cargoCategory),
-              areaId: area.id,
-              contacts: [{ name: load.contact.name, position: "Shipper", phone: load.contact.phone, primary: true }],
-              addresses: [{ id: `${cid}-A1`, label: "Pickup point", line1: load.pickup.address ?? load.pickup.name, barangay: "—", city: area.name, province: area.province, areaId: area.id, receivingHours: "To be confirmed", default: true }],
+              contact: load.contact,
+              place: load.pickup,
+              addressLabel: "Pickup point",
+              category: load.cargoCategory,
               paymentTerms: input.paymentTerms,
-              creditLimit: 0,
-              salespersonId: "ST-02",
               leadSource: leadSourceFor(load.source),
-              customerSince: TODAY,
-              preferredProductIds: [],
-              fulfillment: "truck",
-              status: "new",
               notes: `First booked through Load Board ${load.id} (${load.source}${load.sourceReference ? ` · ${load.sourceReference}` : ""}).`,
-              deliveryFee: 0,
-              paymentBehavior: "average",
-              frequency: 2,
-            };
-            set({ customers: [...s.customers, customer] });
-            customerId = cid;
+            });
           }
 
           const at = stamp();
@@ -1061,6 +1110,120 @@ export const useAppStore = create<DataState & Actions>()(
             roles: ["owner", "dispatcher"],
           });
           return { jobId: job.id, created: true };
+        },
+
+        // ─── Backhaul marketplace (preview) ───────────────────────────────
+        publishBackhaulListing: (input) => {
+          const s = get();
+          const trip = s.trips.find((t) => t.id === input.tripId);
+          if (!trip || !legOpen(trip, "return")) return undefined;
+          const at = stamp();
+          // One listing per return leg: publishing again updates the terms and reopens it.
+          const existing = s.backhaulListings.find((l) => l.tripId === input.tripId);
+          if (existing) {
+            set({ backhaulListings: s.backhaulListings.map((l) => (l.id === existing.id ? { ...l, ...input, status: "Published", publishedAt: l.status === "Published" ? l.publishedAt : at, publishedBy: l.status === "Published" ? l.publishedBy : actor() } : l)) });
+            return existing.id;
+          }
+          const id = nextSeqId("BHL", yymmdd(at), s.backhaulListings);
+          set({ backhaulListings: [{ ...input, id, status: "Published", publishedAt: at, publishedBy: actor() }, ...s.backhaulListings] });
+          return id;
+        },
+
+        setBackhaulListingStatus: (id, status) => {
+          stamp();
+          set((s) => ({ backhaulListings: s.backhaulListings.map((l) => (l.id === id ? { ...l, status } : l)) }));
+        },
+
+        requestBackhaulSpace: (input) => {
+          const s = get();
+          const listing = s.backhaulListings.find((l) => l.id === input.listingId);
+          const trip = listing ? s.trips.find((t) => t.id === listing.tripId) : undefined;
+          if (!listing || !trip) return undefined;
+          const space = returnSpace(trip.id);
+          if (listingStatus(listing, trip, space) !== "Published" || input.weightKg <= 0 || input.weightKg > space) return undefined;
+          const at = stamp();
+          const id = nextSeqId("BKR", yymmdd(at), s.backhaulRequests);
+          const request: BackhaulBookingRequest = { ...input, id, quotedFreight: marketplaceQuote(listing, input.weightKg), status: "Requested", createdAt: at };
+          set((st) => ({ backhaulRequests: [request, ...st.backhaulRequests] }));
+          notify({
+            kind: "backhaul",
+            title: "Backhaul space requested",
+            body: `${input.shipper.businessName}: ${input.weightKg.toLocaleString("en-PH")} kg ${input.cargoDescription}, ${shortArea(input.pickup.areaId)} → ${shortArea(input.dropoff.areaId)} on ${truckById(trip.truckId).code}'s return (${trip.id}).`,
+            href: `/future/backhaul-marketplace?tab=requests&q=${id}`,
+            severity: "info",
+            roles: ["owner", "dispatcher"],
+          });
+          return id;
+        },
+
+        confirmBackhaulRequest: (input) => {
+          const s = get();
+          const req = s.backhaulRequests.find((r) => r.id === input.requestId);
+          if (!req) return undefined;
+          // Already confirmed: never create a second job or load.
+          if (req.jobId) return { jobId: req.jobId, created: false };
+          if (req.status !== "Requested") return undefined;
+          const listing = s.backhaulListings.find((l) => l.id === req.listingId);
+          const trip = listing ? s.trips.find((t) => t.id === listing.tripId) : undefined;
+          if (!listing || !trip || listing.status === "Closed" || !legOpen(trip, "return") || req.weightKg > returnSpace(trip.id)) return undefined;
+
+          const customerId =
+            input.customerId ||
+            req.customerId ||
+            addShipperCustomer({
+              name: req.shipper.businessName,
+              contact: { name: req.shipper.contactName, phone: req.shipper.phone },
+              place: req.dropoff,
+              addressLabel: "Receiving address",
+              category: req.cargoCategory,
+              paymentTerms: input.paymentTerms,
+              leadSource: "Backhaul Marketplace",
+              notes: `First booked through Backhaul Marketplace request ${req.id}.`,
+            });
+
+          const at = stamp();
+          const { job, loads } = buildJob(
+            {
+              customerId,
+              source: "Backhaul Marketplace",
+              leg: "return",
+              pickup: req.pickup,
+              dropoff: req.dropoff,
+              consignee: req.consignee ?? { name: req.shipper.contactName, phone: req.shipper.phone },
+              cargo: [{ cargoDescription: req.cargoDescription, cargoCategory: req.cargoCategory, quantity: req.quantity, unit: req.unit, weightKg: req.weightKg }],
+              truckRequirement: truckRequirementFor({ weightKg: req.weightKg, cargoCategory: req.cargoCategory, truckType: "Any Closed Van" }),
+              pickupAt: req.readyAt,
+              requiredBy: requiredByFor({ pickupAt: req.readyAt }),
+              freightCharge: input.freightCharge,
+              additionalCharges: [],
+              paymentTerms: input.paymentTerms,
+              notes: req.notes,
+              status: "Awaiting Dispatch",
+              loadType: "Third-Party",
+            },
+            at,
+          );
+          job.history.push({ at, label: `Booked from Backhaul Marketplace request ${req.id}`, by: actor(), note: `${req.shipper.businessName} · instant quote ₱${req.quotedFreight.toLocaleString("en-PH")}` });
+          set((st) => ({
+            jobs: [job, ...st.jobs],
+            loads: [...loads, ...st.loads],
+            backhaulRequests: st.backhaulRequests.map((r) => (r.id === req.id ? { ...r, customerId, status: "Confirmed", jobId: job.id, respondedAt: at, respondedBy: actor() } : r)),
+          }));
+          get().assignJobToTrip(job.id, trip.id);
+          notify({
+            kind: "job",
+            title: "Marketplace booking confirmed",
+            body: `${req.id} → ${job.id}: ${req.cargoDescription}, ${req.weightKg.toLocaleString("en-PH")} kg on ${truckById(trip.truckId).code}'s return leg (${trip.id}).`,
+            href: `/jobs/${job.id}`,
+            severity: "success",
+            roles: ["owner", "dispatcher"],
+          });
+          return { jobId: job.id, created: true };
+        },
+
+        declineBackhaulRequest: (id, reason) => {
+          const at = stamp();
+          set((s) => ({ backhaulRequests: s.backhaulRequests.map((r) => (r.id === id && r.status === "Requested" && !r.jobId ? { ...r, status: "Declined", declineReason: reason, respondedAt: at, respondedBy: actor() } : r)) }));
         },
 
         markNotificationRead: (id) => set((s) => ({ notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
@@ -1182,8 +1345,8 @@ export const useAppStore = create<DataState & Actions>()(
       };
     },
     {
-      name: "tradeloop-logistics-demo-v2",
-      version: 2,
+      name: "tradeloop-logistics-demo-v3",
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       partialize: (s) => ({
@@ -1205,6 +1368,8 @@ export const useAppStore = create<DataState & Actions>()(
         truckingPartners: s.truckingPartners,
         boardLoads: s.boardLoads,
         boardCapacity: s.boardCapacity,
+        backhaulListings: s.backhaulListings,
+        backhaulRequests: s.backhaulRequests,
         orders: s.orders,
         purchaseOrders: s.purchaseOrders,
         salesPayments: s.salesPayments,

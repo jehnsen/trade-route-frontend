@@ -113,7 +113,8 @@ export type LeadSource =
   | "Messenger"
   | "Referral"
   | "Walk-in"
-  | "Existing Customer Referral";
+  | "Existing Customer Referral"
+  | "Backhaul Marketplace";
 export type Fulfillment = "truck" | "pickup" | "partner";
 export type PaymentBehavior = "prompt" | "average" | "slow" | "delinquent";
 
@@ -365,7 +366,7 @@ export type JobStatus =
   | "Completed"
   | "Cancelled";
 
-export type JobSource = "Phone" | "Messenger" | "Facebook" | "Sales Staff" | "Repeat Customer" | "Referral" | "Customer Portal" | "Load Board";
+export type JobSource = "Phone" | "Messenger" | "Facebook" | "Sales Staff" | "Repeat Customer" | "Referral" | "Customer Portal" | "Load Board" | "Backhaul Marketplace";
 
 /** Outbound = leaves Lucena; Return = hauled on a return (backhaul) leg toward Quezon. */
 export type Leg = "outbound" | "return";
@@ -627,6 +628,61 @@ export interface ExternalCapacity extends CapacityBase {
 }
 
 export type AvailableCapacity = InternalCapacity | ExternalCapacity;
+
+// ─── Backhaul marketplace (preview) ─────────────────────────────────────────
+// Our own return legs published for outside traders and shippers. Shippers get an instant
+// quote and request space; dispatch confirms each request, which then becomes a Job + Load on
+// the trip. Open space is always read from the trip — never stored on the listing.
+
+export type BackhaulListingStatus = "Published" | "Paused" | "Full" | "Departed" | "Closed";
+
+/** One listing per trip's return leg. */
+export interface BackhaulListing {
+  id: string;
+  tripId: string;
+  /** Rate offered to shippers on this leg, gross kg. */
+  ratePerKg: number;
+  minimumCharge: number;
+  /** Empty = accepts any cargo category. */
+  acceptedCargo: CargoCategory[];
+  restrictions?: string;
+  /** Recorded status. Full / Departed are derived from the trip. */
+  status: Extract<BackhaulListingStatus, "Published" | "Paused" | "Closed">;
+  publishedAt: ISODateTime;
+  publishedBy: string;
+}
+
+export type BackhaulRequestStatus = "Requested" | "Confirmed" | "Declined" | "Cancelled" | "Expired";
+
+/** A shipper asking for space on a listed return leg. */
+export interface BackhaulBookingRequest {
+  id: string;
+  listingId: string;
+  /** Set when the shipper is (or becomes) one of our customers. */
+  customerId?: string;
+  shipper: { businessName: string; contactName: string; phone: string };
+  /** Receiving contact at drop-off; the shipper's contact when empty. */
+  consignee?: { name: string; phone: string };
+  pickup: Place;
+  dropoff: Place;
+  cargoDescription: string;
+  cargoCategory: CargoCategory;
+  quantity: number;
+  unit: string;
+  weightKg: number;
+  /** When the cargo is ready for pickup. */
+  readyAt: ISODateTime;
+  /** Instant quote shown to the shipper when they asked. */
+  quotedFreight: number;
+  notes?: string;
+  /** Recorded status. Cancelled follows the job; Expired is derived once the leg departs. */
+  status: Extract<BackhaulRequestStatus, "Requested" | "Confirmed" | "Declined">;
+  createdAt: ISODateTime;
+  respondedAt?: ISODateTime;
+  respondedBy?: string;
+  declineReason?: string;
+  jobId?: string;
+}
 
 // ─── Finance (freight billing) ──────────────────────────────────────────────
 export type PaymentMethod = "Cash" | "Bank Transfer" | "GCash" | "Maya" | "Check" | "COD";

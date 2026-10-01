@@ -110,6 +110,7 @@ export function ReturnLegCard({ trip, m }: { trip: Trip; m: TripMetrics }) {
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <LoadTypeBadge type={load.type} className="text-[10px]" />
                 {load.jobId && boardLoads.some((b) => b.jobId === load.jobId) && <span className="text-[10px] text-muted-foreground">via Load Board</span>}
+                {load.jobId && m.jobs.some((j) => j.id === load.jobId && j.source === "Backhaul Marketplace") && <span className="text-[10px] text-muted-foreground">via Marketplace</span>}
               </div>
             </li>
           ))}

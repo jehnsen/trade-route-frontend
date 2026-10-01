@@ -306,7 +306,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                     <m.icon className="size-4 shrink-0" />
                     <span className="flex-1 truncate">{m.label}</span>
                     <span className="rounded border border-white/15 px-1 text-[9.5px] font-semibold tracking-wide uppercase">
-                      Soon
+                      {m.preview ? "Preview" : "Soon"}
                     </span>
                   </Link>
                 </li>
