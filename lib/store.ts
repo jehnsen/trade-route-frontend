@@ -415,7 +415,7 @@ export const useAppStore = create<DataState & Actions>()(
       };
       const actor = () => ROLE_ACTOR[get().role];
       const notify = (n: Omit<AppNotification, "id" | "at" | "read">) =>
-        set((s) => ({ notifications: [{ ...n, id: `N-${Date.now().toString(36)}`, at: stamp(), read: false }, ...s.notifications] }));
+        set((s) => ({ notifications: [{ ...n, id: `N-${Date.now().toString(36)}-${s.notifications.length}`, at: stamp(), read: false }, ...s.notifications].slice(0, 200) }));
       const jobEvent = (j: LogisticsJob, label: string, at: string, note?: string, by?: string): LogisticsJob => ({ ...j, history: [...j.history, { at, label, by: by ?? actor(), note }] });
       const tripEvent = (t: Trip, label: string, at: string, note?: string, by?: string): Trip => ({ ...t, history: [...t.history, { at, label, by: by ?? actor(), note }] });
 
@@ -1347,7 +1347,24 @@ export const useAppStore = create<DataState & Actions>()(
     {
       name: "tradeloop-logistics-demo-v3",
       version: 3,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => ({
+        getItem: (name) => localStorage.getItem(name),
+        removeItem: (name) => localStorage.removeItem(name),
+        /** Demo sessions can run long enough to approach the localStorage quota; drop the oldest notifications and retry once rather than losing every later write. */
+        setItem: (name, value) => {
+          try {
+            localStorage.setItem(name, value);
+          } catch {
+            try {
+              const parsed = JSON.parse(value);
+              if (Array.isArray(parsed?.state?.notifications)) parsed.state.notifications = parsed.state.notifications.slice(0, 50);
+              localStorage.setItem(name, JSON.stringify(parsed));
+            } catch {
+              // still over quota after trimming — skip this write, keep the in-memory state
+            }
+          }
+        },
+      })),
       skipHydration: true,
       partialize: (s) => ({
         role: s.role,

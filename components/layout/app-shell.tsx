@@ -8,6 +8,8 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   FlaskConical,
   Lock,
   Menu,
@@ -48,6 +50,7 @@ import {
   Sheet,
   SheetContent,
   SheetTitle,
+  Tip,
 } from "@/components/ui/overlays";
 import { EmptyState } from "@/components/shared/common";
 import { Logo } from "./brand";
@@ -104,6 +107,7 @@ function SidebarLink({
   danger,
   onNavigate,
   subtle,
+  collapsed,
 }: {
   href: string;
   label: string;
@@ -112,52 +116,84 @@ function SidebarLink({
   danger?: boolean;
   onNavigate?: () => void;
   subtle?: boolean;
+  collapsed?: boolean;
 }) {
   const pathname = usePathname();
   const active = pathname === href || pathname.startsWith(href + "/");
-  return (
-    <li>
-      <Link
-        href={href}
-        onClick={onNavigate}
-        aria-current={active ? "page" : undefined}
-        className={cn(
-          "sidebar-link group flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 font-medium transition-colors",
-          subtle ? "text-[13px]" : "text-[13.5px]",
-          active
-            ? "bg-sidebar-active text-white shadow-sm"
-            : subtle
-              ? "text-sidebar-muted hover:bg-sidebar-accent hover:text-white"
-              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
-        )}
-      >
+  const link = (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      aria-label={collapsed ? label : undefined}
+      className={cn(
+        "sidebar-link group flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 font-medium transition-colors",
+        collapsed && "justify-center px-0",
+        subtle ? "text-[13px]" : "text-[13.5px]",
+        active
+          ? "bg-sidebar-active text-white shadow-sm"
+          : subtle
+            ? "text-sidebar-muted hover:bg-sidebar-accent hover:text-white"
+            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
+      )}
+    >
+      <span className="relative">
         <Icon
           className={cn(
             "size-4 shrink-0",
             active ? "text-white" : "text-sidebar-muted group-hover:text-white",
           )}
         />
-        <span className="flex-1 truncate">{label}</span>
-        {!!count && count > 0 && (
+        {collapsed && !!count && count > 0 && (
           <span
             className={cn(
-              "rounded-full px-1.5 text-[10.5px] font-semibold tabular",
-              danger
-                ? "bg-[oklch(0.56_0.2_25)] text-white"
-                : active
-                  ? "bg-black/10 text-[#1c3024]"
-                  : "bg-white/10 text-sidebar-foreground",
+              "absolute -top-1.5 -right-1.5 size-2 rounded-full",
+              danger ? "bg-[oklch(0.56_0.2_25)]" : "bg-[#c7eea2]",
             )}
-          >
-            {count}
-          </span>
+          />
         )}
-      </Link>
+      </span>
+      {!collapsed && (
+        <>
+          <span className="flex-1 truncate">{label}</span>
+          {!!count && count > 0 && (
+            <span
+              className={cn(
+                "rounded-full px-1.5 text-[10.5px] font-semibold tabular",
+                danger
+                  ? "bg-[oklch(0.56_0.2_25)] text-white"
+                  : active
+                    ? "bg-black/10 text-[#1c3024]"
+                    : "bg-white/10 text-sidebar-foreground",
+              )}
+            >
+              {count}
+            </span>
+          )}
+        </>
+      )}
+    </Link>
+  );
+  return (
+    <li>
+      {collapsed ? (
+        <Tip content={label} side="right">
+          {link}
+        </Tip>
+      ) : (
+        link
+      )}
     </li>
   );
 }
 
-function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+function NavLinks({
+  onNavigate,
+  collapsed,
+}: {
+  onNavigate?: () => void;
+  collapsed?: boolean;
+}) {
   const navId = React.useId();
   const pathname = usePathname();
   const role = useAppStore((s) => s.role);
@@ -178,7 +214,10 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   );
   return (
     <nav
-      className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-5 scrollbar-thin"
+      className={cn(
+        "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-5 scrollbar-thin",
+        collapsed ? "px-2" : "px-4",
+      )}
       aria-label="Main"
     >
       {NAV.map((section) => {
@@ -191,30 +230,37 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
             pathname === item.href || pathname.startsWith(item.href + "/"),
         );
         const open =
-          items.length === 1 || (expanded[section.label] ?? isCurrentSection);
+          collapsed ||
+          items.length === 1 ||
+          (expanded[section.label] ?? isCurrentSection);
         const sectionId = `${navId}-${section.label.toLowerCase().replace(/[^a-z]+/g, "-")}`;
         return (
           <div key={section.label}>
-            <button
-              type="button"
-              onClick={() =>
-                setExpanded((value) => ({ ...value, [section.label]: !open }))
-              }
-              disabled={items.length === 1}
-              aria-expanded={open}
-              aria-controls={sectionId}
-              className="mb-1.5 flex w-full cursor-pointer items-center justify-between px-3 text-[10px] font-semibold tracking-[0.13em] text-sidebar-muted uppercase disabled:cursor-default hover:text-white"
-            >
-              {section.label}
-              {items.length > 1 && (
-                <ChevronDown
-                  className={cn(
-                    "size-3 transition-transform",
-                    !open && "-rotate-90",
-                  )}
-                />
-              )}
-            </button>
+            {!collapsed && (
+              <button
+                type="button"
+                onClick={() =>
+                  setExpanded((value) => ({
+                    ...value,
+                    [section.label]: !open,
+                  }))
+                }
+                disabled={items.length === 1}
+                aria-expanded={open}
+                aria-controls={sectionId}
+                className="mb-1.5 flex w-full cursor-pointer items-center justify-between px-3 text-[10px] font-semibold tracking-[0.13em] text-sidebar-muted uppercase disabled:cursor-default hover:text-white"
+              >
+                {section.label}
+                {items.length > 1 && (
+                  <ChevronDown
+                    className={cn(
+                      "size-3 transition-transform",
+                      !open && "-rotate-90",
+                    )}
+                  />
+                )}
+              </button>
+            )}
             <ul id={sectionId} className={cn("grid gap-1", !open && "hidden")}>
               {items.map((item) => (
                 <SidebarLink
@@ -228,13 +274,14 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                     item.badgeKey === "docsExpiring"
                   }
                   onNavigate={onNavigate}
+                  collapsed={collapsed}
                 />
               ))}
             </ul>
           </div>
         );
       })}
-      {tradingItems.length > 0 && (
+      {tradingItems.length > 0 && !collapsed && (
         <div className="border-t border-sidebar-border pt-3">
           <button
             type="button"
@@ -271,92 +318,171 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           )}
         </div>
       )}
-      <div>
-        <button
-          type="button"
-          onClick={() => setFutureOpen((v) => !v)}
-          className="flex w-full items-center justify-between px-3 pb-1 text-[10px] font-semibold tracking-[0.12em] text-sidebar-muted uppercase hover:text-white cursor-pointer"
-          aria-expanded={futureOpen}
-        >
-          Future Modules
-          <ChevronDown
-            className={cn(
-              "size-3.5 transition-transform",
-              futureOpen && "rotate-180",
-            )}
-          />
-        </button>
-        {futureOpen && (
-          <ul className="grid gap-0.5">
-            {FUTURE_MODULES.map((m) => {
-              const href = `/future/${m.slug}`;
-              const active = pathname === href;
-              return (
-                <li key={m.slug}>
-                  <Link
-                    href={href}
-                    onClick={onNavigate}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
-                      active
-                        ? "bg-sidebar-accent text-white"
-                        : "text-sidebar-muted hover:bg-sidebar-accent hover:text-white",
-                    )}
-                  >
-                    <m.icon className="size-4 shrink-0" />
-                    <span className="flex-1 truncate">{m.label}</span>
-                    <span className="rounded border border-white/15 px-1 text-[9.5px] font-semibold tracking-wide uppercase">
-                      {m.preview ? "Preview" : "Soon"}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+      {!collapsed && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setFutureOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-3 pb-1 text-[10px] font-semibold tracking-[0.12em] text-sidebar-muted uppercase hover:text-white cursor-pointer"
+            aria-expanded={futureOpen}
+          >
+            Future Modules
+            <ChevronDown
+              className={cn(
+                "size-3.5 transition-transform",
+                futureOpen && "rotate-180",
+              )}
+            />
+          </button>
+          {futureOpen && (
+            <ul className="grid gap-0.5">
+              {FUTURE_MODULES.map((m) => {
+                const href = `/future/${m.slug}`;
+                const active = pathname === href;
+                return (
+                  <li key={m.slug}>
+                    <Link
+                      href={href}
+                      onClick={onNavigate}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
+                        active
+                          ? "bg-sidebar-accent text-white"
+                          : "text-sidebar-muted hover:bg-sidebar-accent hover:text-white",
+                      )}
+                    >
+                      <m.icon className="size-4 shrink-0" />
+                      <span className="flex-1 truncate">{m.label}</span>
+                      <span className="rounded border border-white/15 px-1 text-[9.5px] font-semibold tracking-wide uppercase">
+                        {m.preview ? "Preview" : "Soon"}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
     </nav>
   );
 }
 
-function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarBody({
+  onNavigate,
+  collapsed,
+  onToggleCollapse,
+}: {
+  onNavigate?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+}) {
   return (
     <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
-      <div className="flex h-[68px] shrink-0 items-center px-6">
+      <div
+        className={cn(
+          "flex h-[68px] shrink-0 items-center",
+          collapsed ? "justify-center px-2" : "px-6",
+        )}
+      >
         <Link href="/command-center" onClick={onNavigate}>
-          <Logo className="gap-2.5 [&_svg_rect]:fill-[#c9ecaa] [&_svg_path]:stroke-[#263e36] [&_svg_circle]:fill-[#263e36] [&>span>span:first-child]:text-[21px] [&>span>span:last-child]:hidden" />
+          {collapsed ? (
+            <span className="flex size-9 items-center justify-center rounded-lg bg-[#c9ecaa]">
+              <svg viewBox="0 0 32 32" className="size-5" aria-hidden>
+                <path
+                  d="M8 21.5c3.5 0 4.5-3 8-3s4.5 3 8 3"
+                  stroke="#263e36"
+                  strokeWidth="2.6"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M9 14.5h9.5l3.5-4"
+                  stroke="#263e36"
+                  strokeWidth="2.6"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <circle cx="22.5" cy="10" r="2" fill="#263e36" />
+              </svg>
+            </span>
+          ) : (
+            <Logo className="gap-2.5 [&_svg_rect]:fill-[#c9ecaa] [&_svg_path]:stroke-[#263e36] [&_svg_circle]:fill-[#263e36] [&>span>span:first-child]:text-[21px] [&>span>span:last-child]:hidden" />
+          )}
         </Link>
       </div>
-      <div className="mx-4 mb-7 flex items-center gap-3 rounded-xl border border-sidebar-border bg-white/[0.035] p-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">
-          <Building2 className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <div className="text-xs font-semibold text-white">Lucena Fresh</div>
-          <div className="mt-1 text-[10px] text-sidebar-muted">
-            Logistics workspace
+      {collapsed ? (
+        <div className="mx-2 mb-7 flex items-center justify-center rounded-xl border border-sidebar-border bg-white/[0.035] p-2">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">
+            <Building2 className="size-4" />
+          </span>
+        </div>
+      ) : (
+        <div className="mx-4 mb-7 flex items-center gap-3 rounded-xl border border-sidebar-border bg-white/[0.035] p-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">
+            <Building2 className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-white">
+              Lucena Fresh
+            </div>
+            <div className="mt-1 text-[10px] text-sidebar-muted">
+              Logistics workspace
+            </div>
           </div>
         </div>
-      </div>
-      <NavLinks onNavigate={onNavigate} />
-      <div className="m-4 rounded-xl border border-sidebar-border bg-white/[0.035] p-4">
-        <div className="mb-2 flex items-center gap-2 text-xs font-medium text-white">
-          <span className="size-1.5 rounded-full bg-[#c7eea2]" /> Every mile,
-          connected.
+      )}
+      <NavLinks onNavigate={onNavigate} collapsed={collapsed} />
+      {!collapsed && (
+        <div className="m-4 rounded-xl border border-sidebar-border bg-white/[0.035] p-4">
+          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-white">
+            <span className="size-1.5 rounded-full bg-[#c7eea2]" /> Every
+            mile, connected.
+          </div>
+          <p className="text-[11px] leading-relaxed text-sidebar-muted">
+            Your fleet, freight and finances.
+            <br />
+            One connected workspace.
+          </p>
+          <Link
+            href="/reports"
+            onClick={onNavigate}
+            className="mt-3 flex items-center justify-between text-[11px] font-medium text-[#c7eea2]"
+          >
+            Explore your reports <ArrowUpRight className="size-3.5" />
+          </Link>
         </div>
-        <p className="text-[11px] leading-relaxed text-sidebar-muted">
-          Your fleet, freight and finances.
-          <br />
-          One connected workspace.
-        </p>
-        <Link
-          href="/reports"
-          onClick={onNavigate}
-          className="mt-3 flex items-center justify-between text-[11px] font-medium text-[#c7eea2]"
+      )}
+      {onToggleCollapse && (
+        <div
+          className={cn(
+            "shrink-0 border-t border-sidebar-border p-2",
+            collapsed && "flex justify-center",
+          )}
         >
-          Explore your reports <ArrowUpRight className="size-3.5" />
-        </Link>
-      </div>
+          <Tip content={collapsed ? "Expand sidebar" : "Collapse sidebar"} side="right">
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className={cn(
+                "flex min-h-9 cursor-pointer items-center gap-2.5 rounded-lg px-3 text-[13px] font-medium text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-white",
+                collapsed ? "justify-center px-0" : "w-full",
+              )}
+            >
+              {collapsed ? (
+                <ChevronsRight className="size-4 shrink-0" />
+              ) : (
+                <>
+                  <ChevronsLeft className="size-4 shrink-0" />
+                  <span>Collapse</span>
+                </>
+              )}
+            </button>
+          </Tip>
+        </div>
+      )}
     </div>
   );
 }
@@ -511,10 +637,35 @@ function RoleGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+const SIDEBAR_COLLAPSED_KEY = "tradeloop-sidebar-collapsed";
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(false);
+  const [hydrated, setHydrated] = React.useState(false);
   const pathname = usePathname();
+
+  React.useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
+    } catch {
+      // storage unavailable (private mode, SSR edge cases) — keep default
+    }
+    setHydrated(true);
+  }, []);
+
+  const toggleCollapsed = React.useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // storage unavailable — collapsed state just won't persist
+      }
+      return next;
+    });
+  }, []);
   const currentSection = NAV.find((section) =>
     section.items.some(
       (item) => pathname === item.href || pathname.startsWith(item.href + "/"),
@@ -547,8 +698,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         Skip to content
       </a>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block no-print">
-        <SidebarBody />
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-30 hidden lg:block no-print",
+          hydrated && "transition-[width] duration-200 ease-out",
+          collapsed ? "w-[72px]" : "w-64",
+        )}
+      >
+        <SidebarBody collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
       </aside>
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent
@@ -559,7 +716,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <SidebarBody onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
-      <div className="lg:pl-64">
+      <div
+        className={cn(
+          hydrated && "transition-[padding] duration-200 ease-out",
+          collapsed ? "lg:pl-[72px]" : "lg:pl-64",
+        )}
+      >
         <header className="sticky top-0 z-20 flex h-[68px] items-center gap-3 border-b bg-card/95 px-4 backdrop-blur-sm sm:px-7 lg:px-8 no-print">
           <Button
             variant="ghost"
