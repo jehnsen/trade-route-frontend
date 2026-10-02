@@ -246,6 +246,9 @@ export function PortalHome() {
                 </div>
               ))}
             </div>
+            <Link href="/return-trips" className="mt-7 inline-flex items-center gap-2 text-xs font-semibold text-[#31573e] hover:underline">
+              Need cargo moved to Quezon? Book space on our return trips <ArrowUpRight className="size-3.5" />
+            </Link>
           </div>
           <div className="overflow-hidden rounded-2xl border border-[#dce3d7] bg-[#fcfdf9] shadow-[0_8px_32px_-20px_#183b2c33]">
             <div className="flex items-center justify-between border-b border-[#e5e9df] px-6 py-5">

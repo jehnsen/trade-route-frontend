@@ -27,6 +27,7 @@ const LINKS = [
   { href: "/", label: "Home" },
   { href: "/products", label: "Our products" },
   { href: "/#delivery", label: "How we deliver" },
+  { href: "/return-trips", label: "Ship with us" },
   { href: "/contact", label: "Contact us" },
 ];
 
@@ -194,6 +195,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
                 { href: "/products?category=seafood", label: "Fresh seafood" },
                 { href: "/products?category=produce", label: "Agricultural produce" },
                 { href: "/#delivery", label: "Our delivery network" },
+                { href: "/return-trips", label: "Ship cargo to Quezon" },
                 { href: "/request-quote", label: "Wholesale quotes" },
                 { href: "/my-orders", label: "Track your orders" },
               ].map((link) => (

@@ -13,7 +13,7 @@ import { truckById } from "@/data/fleet";
 import { BACKHAUL_MINIMUM_FREIGHT, BACKHAUL_RATE_PER_KG } from "@/data/cargo";
 import { jobTotal, type TripMetrics } from "./logistics";
 import { etaAt, isQuezon, legOpen, shortArea, tripLeg, type MatchCheck, type MatchLabel } from "./load-board";
-import { fmtTime, kg, relativeDay } from "./format";
+import { fmtTime, fmtTimeWindow, kg, relativeDay } from "./format";
 import { memoizeLast, sumBy } from "./utils";
 
 export const REQUEST_STATUSES: BackhaulRequestStatus[] = ["Requested", "Confirmed", "Declined", "Cancelled", "Expired"];
@@ -123,6 +123,9 @@ export type RequestDraft = Pick<BackhaulBookingRequest, "pickup" | "dropoff" | "
 
 const when = (dt: string) => `${relativeDay(dt.slice(0, 10))} ${fmtTime(dt)}`;
 
+/** When the truck passes an area. Shippers outside the company only see a two-hour window. */
+const passTime = (dt: string, shipper: boolean) => (shipper ? fmtTimeWindow(dt) : `~${fmtTime(dt)}`);
+
 function pickupCheck(r: RequestDraft, v: ListingView): MatchCheck {
   const area = r.pickup.areaId;
   if (v.pickupAreas.includes(area)) return { rule: "pickup", result: "ok", text: `Pickup in ${shortArea(area)} is on the return route` };
@@ -143,13 +146,14 @@ function capacityCheck(r: RequestDraft, v: ListingView): MatchCheck {
 }
 
 /** Cargo ready before the truck passes is fine; up to an hour late means the truck waits. */
-function timingCheck(r: RequestDraft, v: ListingView): MatchCheck {
+function timingCheck(r: RequestDraft, v: ListingView, shipper: boolean): MatchCheck {
   const area = r.pickup.areaId;
   const passAt = etaAt(v.leg, area);
   const late = differenceInMinutes(parseISO(r.readyAt), parseISO(passAt));
-  if (late <= 0) return { rule: "timing", result: "ok", text: `Cargo ready ${fmtTime(r.readyAt)} — truck in ${shortArea(area)} ~${fmtTime(passAt)}` };
-  if (late <= 60) return { rule: "timing", result: "partial", text: `Truck in ${shortArea(area)} ~${fmtTime(passAt)}, cargo ready ${fmtTime(r.readyAt)} — truck would wait ${late} min` };
-  return { rule: "timing", result: "fail", text: `Cargo ready ${when(r.readyAt)} — truck passes ${shortArea(area)} ~${when(passAt)}` };
+  const pass = passTime(passAt, shipper);
+  if (late <= 0) return { rule: "timing", result: "ok", text: `Cargo ready ${fmtTime(r.readyAt)} — truck in ${shortArea(area)} ${pass}` };
+  if (late <= 60) return { rule: "timing", result: "partial", text: `Truck in ${shortArea(area)} ${pass}, cargo ready ${fmtTime(r.readyAt)} — ${shipper ? "the truck may have to wait" : `truck would wait ${late} min`}` };
+  return { rule: "timing", result: "fail", text: `Cargo ready ${when(r.readyAt)} — truck passes ${shortArea(area)} ${relativeDay(passAt.slice(0, 10))} ${pass}` };
 }
 
 function cargoCheck(category: CargoCategory, listing: BackhaulListing | undefined): MatchCheck {
@@ -161,10 +165,20 @@ function cargoCheck(category: CargoCategory, listing: BackhaulListing | undefine
 
 /**
  * Rule-by-rule fit of a request (or a shipper's draft) on a listed leg. Space is only checked
- * for requests that are not on the trip yet.
+ * for requests that are not on the trip yet. `shipper` phrases truck times as windows.
  */
-export function checkRequest(r: RequestDraft, v: ListingView, onTrip = false): { checks: MatchCheck[]; label: MatchLabel } {
-  const checks = [pickupCheck(r, v), destinationCheck(r, v), ...(onTrip ? [] : [capacityCheck(r, v), timingCheck(r, v)]), cargoCheck(r.cargoCategory, v.listing)];
+export function checkRequest(r: RequestDraft, v: ListingView, { onTrip = false, shipper = false } = {}): { checks: MatchCheck[]; label: MatchLabel } {
+  const checks = [pickupCheck(r, v), destinationCheck(r, v), ...(onTrip ? [] : [capacityCheck(r, v), timingCheck(r, v, shipper)]), cargoCheck(r.cargoCategory, v.listing)];
   const label: MatchLabel = checks.some((c) => c.result === "fail") ? "Poor Fit" : checks.some((c) => c.result === "partial") ? "Possible Match" : "Strong Match";
   return { checks, label };
+}
+
+// ─── Shipper lookup ─────────────────────────────────────────────────────────
+const digits = (phone: string) => phone.replace(/\D/g, "").replace(/^63/, "0");
+
+/** Public status check: a shipper finds their request with its number and the mobile number they gave. */
+export function findShipperRequest(requests: BackhaulBookingRequest[], id: string, phone: string) {
+  const want = id.trim().toUpperCase();
+  const mobile = digits(phone);
+  return mobile.length >= 7 ? requests.find((r) => r.id === want && digits(r.shipper.phone) === mobile) : undefined;
 }

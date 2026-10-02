@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, differenceInMinutes, format, parseISO } from "date-fns";
+import { addHours, differenceInCalendarDays, differenceInMinutes, format, parseISO, startOfHour } from "date-fns";
 import { NOW, TODAY } from "@/data/company";
 
 const pesoFmt = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
@@ -29,6 +29,13 @@ export const fmtDateShort = (iso: string) => format(parseISO(iso), "MMM d");
 export const fmtDay = (iso: string) => format(parseISO(iso), "EEE, MMM d");
 export const fmtTime = (iso: string) => format(parseISO(iso), "h:mm a");
 export const fmtDateTime = (iso: string) => format(parseISO(iso), "MMM d, h:mm a");
+
+/** "1–3 PM" / "11 AM–1 PM": a window starting on the hour, for times shared outside the company. */
+export function fmtTimeWindow(iso: string, hours = 2) {
+  const start = startOfHour(parseISO(iso));
+  const end = addHours(start, hours);
+  return format(start, "a") === format(end, "a") ? `${format(start, "h")}–${format(end, "h a")}` : `${format(start, "h a")}–${format(end, "h a")}`;
+}
 
 /** Human label relative to the demo clock (Sep 25, 2026 07:48). */
 export function fmtRelative(iso: string) {

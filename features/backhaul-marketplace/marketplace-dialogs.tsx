@@ -16,7 +16,7 @@ import { CARGO_CATEGORIES, CARGO_TYPES } from "@/data/cargo";
 import { checkRequest, DEFAULT_LISTING_TERMS, legRouteLine, marketplaceQuote, requestStatus, type ListingView } from "@/lib/backhaul-marketplace";
 import { etaAt, isQuezon, placeLabel, shortArea } from "@/lib/load-board";
 import { deliveryIdForJob, jobTotal } from "@/lib/logistics";
-import { fmtDay, fmtTime, kg, peso, relativeDay } from "@/lib/format";
+import { fmtDay, fmtTime, fmtTimeWindow, kg, peso, relativeDay } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/primitives";
 import { Combobox, Field, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/form-controls";
@@ -27,7 +27,6 @@ import { MatchChecks } from "@/features/load-board/board-parts";
 import { CargoChecklist } from "@/features/load-board/board-forms";
 import { PAYMENT_TERMS } from "@/features/load-board/board-matching";
 
-const fmtHHmm = (dt: string) => dt.slice(11, 16);
 const legLabel = (v: ListingView) => `${v.truckLabel} · ${relativeDay(v.trip.date)} (${v.trip.id})`;
 const rateLabel = (rate: number) => `${peso(rate, true)}/kg`;
 
@@ -164,7 +163,7 @@ function ReviewBody({ req, v, onClose }: { req: BackhaulBookingRequest; v?: List
   const customerMap = useCustomerMap();
   const status = requestStatus(req, job, v?.status);
   const pending = status === "Requested";
-  const fit = v ? checkRequest(req, v, !pending) : undefined;
+  const fit = v ? checkRequest(req, v, { onTrip: !pending }) : undefined;
   const spaceFails = fit?.checks.some((c) => c.rule === "capacity" && c.result === "fail");
   const canConfirm = pending && !!v?.bookable && !spaceFails;
   const known = req.customerId ? customerMap.get(req.customerId) : undefined;
@@ -368,7 +367,7 @@ const timeRe = /^\d{2}:\d{2}$/;
 const requestSchema = z.object({
   businessName: z.string().trim().min(2, "Enter your business name"),
   contactName: z.string().trim().min(2, "Who should we call?"),
-  phone: z.string().trim().min(7, "Enter a mobile number"),
+  phone: z.string().trim().regex(/^(09|\+639)\d{2}\s?\d{3}\s?\d{4}$/, "Use a PH mobile number, e.g. 0917 123 4567"),
   pickup: z.string().min(1, "Choose where we pick up"),
   pickupAddress: z.string().trim().max(120).optional(),
   dropoffArea: z.string().min(1, "Choose the drop-off town"),
@@ -392,7 +391,7 @@ export function RequestSpaceDialog({ tripId, onClose, onSubmitted }: { tripId: s
   const pickups = v ? pickupOptions(v) : [];
   const form = useForm<RequestValues>({
     resolver: zodResolver(requestSchema),
-    defaultValues: { businessName: "", contactName: "", phone: "", pickup: pickups[0]?.value ?? "", pickupAddress: "", dropoffArea: "lucena", dropoffAddress: "", cargoKey: "red-onion", quantity: 40, weightKg: 1000, readyTime: v ? fmtHHmm(etaAt(v.leg, v.pickupAreas[0] ?? "lucena")) : "12:00", notes: "" },
+    defaultValues: { businessName: "", contactName: "", phone: "", pickup: pickups[0]?.value ?? "", pickupAddress: "", dropoffArea: "lucena", dropoffAddress: "", cargoKey: "red-onion", quantity: 40, weightKg: 1000, readyTime: v ? `${etaAt(v.leg, v.pickupAreas[0] ?? "lucena").slice(11, 13)}:00` : "12:00", notes: "" },
   });
   const { register, control, handleSubmit, watch, setValue, formState } = form;
   const errors = formState.errors;
@@ -416,7 +415,7 @@ export function RequestSpaceDialog({ tripId, onClose, onSubmitted }: { tripId: s
     cargoCategory: cargo?.category ?? "General Cargo",
     readyAt: `${v.trip.date}T${timeRe.test(watch("readyTime")) ? watch("readyTime") : "00:00"}`,
   };
-  const fit = draft.weightKg > 0 ? checkRequest(draft, v) : undefined;
+  const fit = draft.weightKg > 0 ? checkRequest(draft, v, { shipper: true }) : undefined;
   const blocked = fit?.checks.some((c) => c.result === "fail" && (c.rule === "capacity" || c.rule === "cargo"));
   const quote = draft.weightKg > 0 ? marketplaceQuote(listing, draft.weightKg) : 0;
 
@@ -448,7 +447,7 @@ export function RequestSpaceDialog({ tripId, onClose, onSubmitted }: { tripId: s
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Request space · {v.truckLabel} to Lucena, {fmtDay(v.trip.date)}</DialogTitle>
+          <DialogTitle>Request space · return trip to Lucena, {fmtDay(v.trip.date)}</DialogTitle>
           <DialogDescription>
             {legRouteLine(v)} · {kg(v.openKg)} open · {rateLabel(listing.ratePerKg)}, minimum {peso(listing.minimumCharge)}
           </DialogDescription>
@@ -478,7 +477,7 @@ export function RequestSpaceDialog({ tripId, onClose, onSubmitted }: { tripId: s
                   <SelectContent>
                     {pickups.map((p) => (
                       <SelectItem key={p.value} value={p.value}>
-                        {p.label} · ~{fmtTime(etaAt(v.leg, p.area))}
+                        {p.label} · {fmtTimeWindow(etaAt(v.leg, p.area))}
                       </SelectItem>
                     ))}
                   </SelectContent>

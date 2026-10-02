@@ -4,7 +4,8 @@ import { LIFETIME_BASELINE } from "../data/finance";
 import { LUCENA_WAREHOUSE } from "../data/areas";
 import { getCustomerStats, getInvoices, getTripMetricsMap, invoiceIdForJob, tripWarnings, unassignedJobs } from "../lib/logistics";
 import { capacityShareMessage, getBoardMatches, getCapacityViews, loadShareMessage, loadStatus } from "../lib/load-board";
-import { getListingViews, requestStatus } from "../lib/backhaul-marketplace";
+import { checkRequest, findShipperRequest, getListingViews, requestStatus } from "../lib/backhaul-marketplace";
+import { fmtTimeWindow } from "../lib/format";
 
 const s = () => useAppStore.getState();
 const metrics = () => getTripMetricsMap(s().trips, s().jobs, s().loads, s().deliveries, s().expenses);
@@ -207,3 +208,11 @@ assert(legs().get("TRIP-260926-02")!.status === "Paused" && s().requestBackhaulS
 // 24. Cancelling the job gives the space back and the request follows the job
 s().cancelJob(mj.id, "Shipper postponed");
 assert(reqStatus("BKR-260925-005") === "Cancelled" && legs().get("TRIP-260926-01")!.openKg === leg20.openKg, "cancelled marketplace job frees the return space");
+
+// 25. Public Return trips page: shippers find their request by number + mobile, and see time windows
+const rqs = s().backhaulRequests;
+assert(findShipperRequest(rqs, "bkr-260925-002", "0917-663-2108")?.id === "BKR-260925-002" && findShipperRequest(rqs, "BKR-260925-002", "+63 917 663 2108")?.id === "BKR-260925-002", "request found by number and mobile in any format");
+assert(findShipperRequest(rqs, "BKR-260925-002", "0917 000 0000") === undefined && findShipperRequest(rqs, "BKR-260925-003", "0917 663 2108") === undefined, "wrong mobile or another shipper's number finds nothing");
+assert(fmtTimeWindow("2026-09-25T13:05") === "1–3 PM" && fmtTimeWindow("2026-09-25T11:40") === "11 AM–1 PM", "truck times shown to shippers as two-hour windows");
+const timing = (shipper: boolean) => checkRequest(req(rq), legs().get("TRIP-260926-01")!, { shipper }).checks.find((c) => c.rule === "timing")!.text;
+assert(!timing(true).includes("~") && timing(true).includes("–") && timing(false).includes("~"), "shipper fit checks hide the exact pass time; dispatch still sees it");

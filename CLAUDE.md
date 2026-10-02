@@ -141,7 +141,7 @@ Heavy selectors are wrapped in `memoizeLast` and exposed through hooks in `hooks
 ```text
 app/
   (internal)/     thin route files for every internal module (incl. load-board, workflow, future/[slug])
-  (public)/       customer ordering portal (trading storefront, Phase 2 preview)
+  (public)/       customer ordering portal (trading storefront, Phase 2 preview) + /return-trips (public backhaul page)
   driver/         mobile driver view
   print/          printable delivery receipt / waybill
 components/
@@ -225,7 +225,13 @@ Share messages (`loadShareMessage`, `capacityShareMessage`) produce plain-text p
 
 ## Backhaul Marketplace (preview)
 
-A working preview at `/future/backhaul-marketplace` (`FutureModule.preview` in `lib/nav.ts`; logic in `lib/backhaul-marketplace.ts`). It lists **our own** return legs only, for outside shippers. There is no public page, online payment or bidding.
+A working preview at `/future/backhaul-marketplace` (`FutureModule.preview` in `lib/nav.ts`; logic in `lib/backhaul-marketplace.ts`). It lists **our own** return legs only, for outside shippers. There is no online payment or bidding.
+
+The shipper side is public at `/return-trips` (`features/portal/return-trips.tsx`, "Ship with us" in the portal nav). It is the only logistics page in the trading storefront; keep it framed as shipping, separate from product ordering.
+
+- Browsing needs no login. Requesting asks only for business name, contact and a PH mobile number. Status checks use request number + mobile (`findShipperRequest`).
+- Never show shippers plates, driver names, trip IDs, other cargo or exact truck times. Use `ShipperListingCard`, `fmtTimeWindow` and `checkRequest(…, { shipper: true })`.
+- Dispatch confirms every request before it becomes a job.
 
 - **BackhaulListing** (`BHL-yymmdd-nnn`): one per trip's return leg (₱/kg, minimum charge, accepted cargo). Open kg is read from the trip, never stored. Full / Departed are derived (`listingStatus`).
 - **BackhaulBookingRequest** (`BKR-yymmdd-nnn`): instant quote via `marketplaceQuote`; effective status via `requestStatus`; fit via `checkRequest` (same `MatchCheck` rules vocabulary as the board).

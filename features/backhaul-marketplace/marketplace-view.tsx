@@ -229,7 +229,11 @@ export function BackhaulMarketplaceView({ initialTab, initialQ }: { initialTab?:
       <div className="mb-4 flex items-start gap-2 rounded-lg border bg-card px-4 py-3 text-sm">
         <Info className="mt-0.5 size-4 shrink-0 text-primary" />
         <div className="min-w-0">
-          <span className="font-medium">Preview:</span> listings are only visible inside TradeLoop for now, with no public page, online payment or bidding. Only our own trucks are listed. Open space is read from each trip&apos;s loads, so this page, the{" "}
+          <span className="font-medium">Preview:</span> published legs also appear on the public{" "}
+          <Link href="/return-trips" className="text-primary hover:underline">
+            Return trips
+          </Link>{" "}
+          page, where shippers request space without an account. No online payment or bidding, and only our own trucks are listed. Open space is read from each trip&apos;s loads, so this page, the{" "}
           <Link href="/backhaul" className="text-primary hover:underline">
             Backhaul
           </Link>{" "}
@@ -333,7 +337,11 @@ export function BackhaulMarketplaceView({ initialTab, initialQ }: { initialTab?:
           <div className="flex items-start gap-2 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm">
             <Store className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <span>
-              <span className="font-medium">What a trader or shipper sees.</span> Only listed legs that still have space appear here, with no trip numbers, other cargo or revenue. Requests you send from here land in{" "}
+              <span className="font-medium">What a trader or shipper sees</span> on the public{" "}
+              <Link href="/return-trips" className="text-primary hover:underline">
+                Return trips
+              </Link>{" "}
+              page. Only listed legs that still have space appear, with no trip numbers, plates, other cargo or revenue, and truck times as two-hour windows. Requests you send from here land in{" "}
               <button type="button" onClick={() => showRequests()} className="cursor-pointer text-primary hover:underline">
                 Booking requests
               </button>
