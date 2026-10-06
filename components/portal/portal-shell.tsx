@@ -3,8 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowUpRight, LayoutDashboard, MapPin, Menu, MessageCircle, Phone, ShoppingBag, UserRound } from "lucide-react";
-import { useAppStore, PORTAL_CUSTOMER_ID } from "@/lib/store";
+import { ArrowUpRight, LayoutDashboard, LogIn, LogOut, MapPin, Menu, MessageCircle, Phone, ShoppingBag, UserRound } from "lucide-react";
+import { useAppStore, usePortalCustomerId } from "@/lib/store";
+import { useSession } from "@/lib/session";
 import { COMPANY, PLATFORM } from "@/data/company";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -34,8 +35,14 @@ const LINKS = [
 export function PortalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const cart = useAppStore((s) => s.cart);
-  const customer = useAppStore((s) => s.customers.find((c) => c.id === PORTAL_CUSTOMER_ID));
+  const customerId = usePortalCustomerId();
+  const customer = useAppStore((s) => s.customers.find((c) => c.id === customerId));
+  const viewer = useAppStore((s) => s.viewer);
+  // Re-render once the storefront profile (contact details) has loaded.
+  useAppStore((s) => s.storefrontStock);
+  const signedIn = useSession((s) => s.status === "signedIn");
   const [open, setOpen] = React.useState(false);
+  React.useEffect(() => void useAppStore.getState().loadStorefront(), []);
   const count = cart.length;
   return (
     <div className="portal flex min-h-dvh flex-col">
@@ -101,10 +108,18 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel>
-                  Signed in as {customer?.contacts[0]?.name}
-                  <div className="mt-1 text-xs font-normal text-muted-foreground">{customer?.name}</div>
-                </DropdownMenuLabel>
+                {signedIn ? (
+                  <DropdownMenuLabel>
+                    {viewer?.role === "customer" ? `Signed in as ${viewer.name}` : `Previewing as ${customer?.contacts[0]?.name ?? "a customer"}`}
+                    <div className="mt-1 text-xs font-normal text-muted-foreground">{customer?.name}</div>
+                  </DropdownMenuLabel>
+                ) : (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/login?next=${encodeURIComponent(pathname)}`}>
+                      <LogIn /> Sign in to your business account
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <Link href="/my-orders">My orders</Link>
@@ -115,12 +130,21 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
                 <DropdownMenuItem asChild>
                   <Link href="/request-quote">Request a wholesale quote</Link>
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/dashboard">
-                    <LayoutDashboard /> Staff workspace (demo)
-                  </Link>
-                </DropdownMenuItem>
+                {signedIn && viewer?.role !== "customer" && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link href="/command-center">
+                        <LayoutDashboard /> Staff workspace
+                      </Link>
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {signedIn && (
+                  <DropdownMenuItem onSelect={() => void useSession.getState().logout()}>
+                    <LogOut /> Sign out
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
             <Button asChild className="hidden h-10 gap-4 rounded-lg px-4 text-xs sm:inline-flex">

@@ -5,7 +5,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Clock, Mail, MapPin, MessageCircle, Phone, ShieldCheck, UserRound } from "lucide-react";
-import { useAppStore, PORTAL_CUSTOMER_ID } from "@/lib/store";
+import { useAppStore, usePortalCustomerId } from "@/lib/store";
+import { PortalAccountGate } from "@/components/portal/portal-sign-in";
 import { useSalesCustomerStats } from "@/hooks/use-data";
 import { COMPANY, staffById } from "@/data/company";
 import { productById, productLabel } from "@/data/products";
@@ -16,8 +17,14 @@ import { Field } from "@/components/ui/form-controls";
 import { AddressDisplay, CapacityBar, Stat } from "@/components/shared/common";
 
 export function PortalAccount() {
-  const customer = useAppStore((s) => s.customers.find((c) => c.id === PORTAL_CUSTOMER_ID))!;
-  const stats = useSalesCustomerStats().get(PORTAL_CUSTOMER_ID)!;
+  const customerId = usePortalCustomerId();
+  return <PortalAccountGate what="see your business account">{customerId && <BusinessAccount customerId={customerId} />}</PortalAccountGate>;
+}
+
+function BusinessAccount({ customerId }: { customerId: string }) {
+  const customer = useAppStore((s) => s.customers.find((c) => c.id === customerId));
+  const stats = useSalesCustomerStats().get(customerId);
+  if (!customer || !stats) return null;
   const sp = staffById(customer.salespersonId);
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">

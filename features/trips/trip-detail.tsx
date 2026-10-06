@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, CornerDownLeft, Flag, Fuel, MapPin, PackageCheck, PackagePlus, Phone, Play, Plus, Printer, Truck, UserRound, Warehouse, XCircle, type LucideIcon } from "lucide-react";
 import type { Delivery, StopType, Trip, TripStop } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useInvoiceMap, useTripMetrics } from "@/hooks/use-data";
 import { routeById } from "@/data/areas";
@@ -61,12 +62,12 @@ export function TripDetail({ id }: { id: string }) {
         actions={
           <>
             {trip.status === "Planned" && (
-              <Button size="sm" variant="outline" onClick={() => (setTripStatus(trip.id, "Loading"), toast.success(`Loading started for ${trip.id}`))}>
+              <Button size="sm" variant="outline" onClick={() => void act(() => setTripStatus(trip.id, "Loading"), () => toast.success(`Loading started for ${trip.id}`))}>
                 <PackagePlus /> Start loading
               </Button>
             )}
             {trip.status === "Loading" && (
-              <Button size="sm" variant="outline" onClick={() => (setTripStatus(trip.id, "Ready"), toast.success(`${trip.id} loaded and ready`))}>
+              <Button size="sm" variant="outline" onClick={() => void act(() => setTripStatus(trip.id, "Ready"), () => toast.success(`${trip.id} loaded and ready`))}>
                 <PackageCheck /> Loading complete
               </Button>
             )}
@@ -80,10 +81,7 @@ export function TripDetail({ id }: { id: string }) {
                 title={`Dispatch ${trip.id}?`}
                 description={`${m.jobs.filter((j) => j.leg === "outbound").length} outbound jobs (${kg(m.outboundKg)}) will be marked In Transit. Outbound cargo is locked after departure.`}
                 confirmLabel="Mark departed"
-                onConfirm={() => {
-                  setTripStatus(trip.id, "Dispatched");
-                  toast.success(`${truck.code} departed Lucena`, { description: `${trip.id} is on the road.` });
-                }}
+                onConfirm={() => void act(() => setTripStatus(trip.id, "Dispatched"), () => toast.success(`${truck.code} departed Lucena`, { description: `${trip.id} is on the road.` }))}
               />
             )}
             {(trip.status === "Dispatched" || trip.status === "In Transit" || trip.status === "Returning") && (
@@ -118,10 +116,7 @@ export function TripDetail({ id }: { id: string }) {
                 description="All jobs go back to Awaiting Dispatch and the stops are cleared."
                 confirmLabel="Cancel trip"
                 destructive
-                onConfirm={() => {
-                  setTripStatus(trip.id, "Cancelled");
-                  toast(`${trip.id} cancelled`);
-                }}
+                onConfirm={() => void act(() => setTripStatus(trip.id, "Cancelled"), () => toast(`${trip.id} cancelled`))}
               />
             )}
           </>
@@ -385,11 +380,11 @@ function StopsTab({ trip, m }: { trip: Trip; m: TripMetrics }) {
                     {departed && !isDrop && s.status !== "Completed" && i > 0 && (
                       <div className="flex gap-1">
                         {s.status === "Pending" && (
-                          <Button size="sm" variant="outline" onClick={() => (markArrived(trip.id, s.id), toast.success(`Arrived at ${s.location.name}`))}>
+                          <Button size="sm" variant="outline" onClick={() => void act(() => markArrived(trip.id, s.id), () => toast.success(`Arrived at ${s.location.name}`))}>
                             Arrived
                           </Button>
                         )}
-                        <Button size="sm" onClick={() => (completeStop(trip.id, s.id), toast.success(s.type === "Backhaul Pickup" ? `Backhaul loaded at ${s.location.name}` : `${s.location.name} done`))}>
+                        <Button size="sm" onClick={() => void act(() => completeStop(trip.id, s.id), () => toast.success(s.type === "Backhaul Pickup" ? `Backhaul loaded at ${s.location.name}` : `${s.location.name} done`))}>
                           {s.type === "Backhaul Pickup" ? "Loaded" : s.type === "Warehouse" ? "Unloaded" : "Done"}
                         </Button>
                       </div>
@@ -517,7 +512,7 @@ function DeliveriesTab({ trip, m }: { trip: Trip; m: TripMetrics }) {
                     {active && !DELIVERY_DONE.includes(d.status) ? (
                       <div className="flex justify-end gap-1">
                         {d.status !== "Arrived" && (
-                          <Button size="sm" variant="outline" onClick={() => (markArrived(d.id), toast.success(`Arrived — ${customers.get(d.customerId)?.name}`))}>
+                          <Button size="sm" variant="outline" onClick={() => void act(() => markArrived(d.id), () => toast.success(`Arrived — ${customers.get(d.customerId)?.name}`))}>
                             Arrived
                           </Button>
                         )}
@@ -770,6 +765,7 @@ function TimelineTab({ trip, m }: { trip: Trip; m: TripMetrics }) {
 
 function CloseTripDialog({ trip, m, openDeliveries, open, onOpenChange }: { trip: Trip; m: TripMetrics; openDeliveries: number; open: boolean; onOpenChange: (v: boolean) => void }) {
   const complete = useAppStore((s) => s.completeTrip);
+  const [saving, setSaving] = React.useState(false);
   const truck = truckById(trip.truckId);
   const start = trip.odometerStart ?? truck.mileageKm;
   const [odo, setOdo] = React.useState(String(start + routeById(trip.routeId).roundTripKm));
@@ -814,12 +810,19 @@ function CloseTripDialog({ trip, m, openDeliveries, open, onOpenChange }: { trip
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              const end = Number(odo);
+            disabled={saving}
+            onClick={async () => {
+              const end = Math.round(Number(odo));
               if (!Number.isFinite(end) || end <= start) return setError("Must be higher than the starting odometer");
-              complete(trip.id, { odometerEnd: end, fuel: logFuel && Number(liters) > 0 ? { liters: Number(liters), pricePerLiter: Number(price) || DEMO_DIESEL_PRICE, station: "Petron — Diversion Rd., Lucena" } : undefined });
-              toast.success(`${trip.id} closed`, { description: `${end - start} km · contribution recalculated with logged diesel.` });
-              onOpenChange(false);
+              setSaving(true);
+              await act(
+                () => complete(trip.id, { odometerEnd: end, fuel: logFuel && Number(liters) > 0 ? { liters: Number(liters), pricePerLiter: Number(price) || DEMO_DIESEL_PRICE, station: "Petron — Diversion Rd., Lucena" } : undefined }),
+                () => {
+                  toast.success(`${trip.id} closed`, { description: `${end - start} km · contribution recalculated with logged diesel.` });
+                  onOpenChange(false);
+                },
+              );
+              setSaving(false);
             }}
           >
             <Flag /> Close trip

@@ -9,13 +9,14 @@ import { toast } from "sonner";
 import { addDays, format, parseISO } from "date-fns";
 import { AlertTriangle, Building2, Handshake, Phone, Plus, Truck, Users } from "lucide-react";
 import type { AreaId, CargoCategory, Leg, LoadBoardSource, Place, TruckType } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useTripMetrics } from "@/hooks/use-data";
 import { TODAY } from "@/data/company";
 import { AREAS, areaName, PLACES } from "@/data/areas";
 import { truckById } from "@/data/fleet";
 import { CARGO_CATEGORIES } from "@/data/cargo";
-import { DISPATCH_CONTACT, LOAD_BOARD_SOURCES, REQUIRED_TRUCK_TYPES, TRUCK_TYPES, cityPlace, legOpen, routeLine, shortArea, tripLeg } from "@/lib/load-board";
+import { dispatchContact, LOAD_BOARD_SOURCES, REQUIRED_TRUCK_TYPES, TRUCK_TYPES, cityPlace, legOpen, routeLine, shortArea, tripLeg } from "@/lib/load-board";
 import { fmtDay, fmtTime, kg } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Input, Textarea } from "@/components/ui/primitives";
@@ -150,8 +151,8 @@ export function PostLoadDialog({ open, onOpenChange, onPosted }: { open: boolean
     }
   };
 
-  const submit = handleSubmit((vals) => {
-    const id = post({
+  const submit = handleSubmit(async (vals) => {
+    await act(() => post({
       source: vals.source,
       sourceReference: vals.sourceReference?.trim() || undefined,
       partnerId: vals.source === "Existing Customer" || !vals.partnerId ? undefined : vals.partnerId,
@@ -168,10 +169,11 @@ export function PostLoadDialog({ open, onOpenChange, onPosted }: { open: boolean
       offeredFreight: vals.offeredFreight || undefined,
       specialHandling: vals.specialHandling?.trim() || undefined,
       notes: vals.notes?.trim() || undefined,
+    }), (id) => {
+      toast.success(`${id} posted to the Load Board`, { description: "Possible trucks are listed under Matches." });
+      onOpenChange(false);
+      onPosted?.(id);
     });
-    toast.success(`${id} posted to the Load Board`, { description: "Possible trucks are listed under Matches." });
-    onOpenChange(false);
-    onPosted?.(id);
   });
 
   const selectField = <K extends "source" | "cargoCategory" | "truckType" | "unit">(name: K, options: readonly string[], id: string) => (
@@ -351,7 +353,7 @@ function InternalCapacityForm({ preset, onCancel, onDone }: { preset?: CapacityP
   const candidates = trips.filter((t) => t.date >= TODAY && t.date <= lastDay && t.status !== "Cancelled" && t.status !== "Completed").sort((a, b) => a.departure.localeCompare(b.departure));
   const form = useForm<InternalValues>({
     resolver: zodResolver(internalSchema),
-    defaultValues: { tripId: preset?.tripId ?? "", leg: preset?.leg ?? "return", acceptedCargo: [], restrictions: "Insulated van that also carries seafood — no chemicals, fertilizer or livestock.", contactName: DISPATCH_CONTACT.name, contactPhone: DISPATCH_CONTACT.phone, notes: "" },
+    defaultValues: { tripId: preset?.tripId ?? "", leg: preset?.leg ?? "return", acceptedCargo: [], restrictions: "Insulated van that also carries seafood — no chemicals, fertilizer or livestock.", contactName: dispatchContact().name, contactPhone: dispatchContact().phone, notes: "" },
   });
   const { register, control, handleSubmit, watch, formState } = form;
   const errors = formState.errors;
@@ -363,11 +365,12 @@ function InternalCapacityForm({ preset, onCancel, onDone }: { preset?: CapacityP
   const isOpen = trip ? legOpen(trip, v.leg) : true;
   const duplicate = posts.find((p) => p.fleet === "internal" && p.tripId === v.tripId && p.leg === v.leg && p.status !== "Cancelled" && p.status !== "Expired");
 
-  const submit = handleSubmit((vals) => {
+  const submit = handleSubmit(async (vals) => {
     if (!trip || !isOpen || duplicate) return;
-    const id = postCapacity({ fleet: "internal", tripId: vals.tripId, leg: vals.leg, source: "Internal", contact: { name: vals.contactName.trim(), phone: vals.contactPhone.trim() }, acceptedCargo: vals.acceptedCargo, restrictions: vals.restrictions?.trim() || undefined, notes: vals.notes?.trim() || undefined });
-    toast.success(`${id} posted — ${truckById(trip.truckId).code} ${vals.leg === "return" ? "return" : "outbound"} space`, { description: `${kg(m!.capacityKg - used)} free right now; updates as cargo is added to ${trip.id}.` });
-    onDone(id);
+    await act(() => postCapacity({ fleet: "internal", tripId: vals.tripId, leg: vals.leg, source: "Internal", contact: { name: vals.contactName.trim(), phone: vals.contactPhone.trim() }, acceptedCargo: vals.acceptedCargo, restrictions: vals.restrictions?.trim() || undefined, notes: vals.notes?.trim() || undefined }), (id) => {
+      toast.success(`${id} posted — ${truckById(trip.truckId).code} ${vals.leg === "return" ? "return" : "outbound"} space`, { description: `${kg(m!.capacityKg - used)} free right now; updates as cargo is added to ${trip.id}.` });
+      onDone(id);
+    });
   });
 
   if (candidates.length === 0) return <EmptyState icon={Truck} title="No trips planned in the next 3 days." description={<Link href="/dispatch" className="text-primary hover:underline">Plan a trip on the Dispatch board</Link>} />;
@@ -464,7 +467,7 @@ function InternalCapacityForm({ preset, onCancel, onDone }: { preset?: CapacityP
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" disabled={(!!trip && !isOpen) || !!duplicate}>
+        <Button type="submit" disabled={(!!trip && !isOpen) || !!duplicate || formState.isSubmitting}>
           <Plus /> Post our capacity
         </Button>
       </DialogFooter>
@@ -519,8 +522,8 @@ function ExternalCapacityForm({ onCancel, onDone }: { onCancel: () => void; onDo
     setValue("sourceReference", p.channelName ?? "");
   };
 
-  const submit = handleSubmit((vals) => {
-    const id = postCapacity({
+  const submit = handleSubmit(async (vals) => {
+    await act(() => postCapacity({
       fleet: "external",
       partnerId: vals.partnerId,
       source: vals.source,
@@ -536,9 +539,10 @@ function ExternalCapacityForm({ onCancel, onDone }: { onCancel: () => void; onDo
       acceptedCargo: vals.acceptedCargo,
       restrictions: vals.restrictions?.trim() || undefined,
       notes: vals.notes?.trim() || undefined,
+    }), (id) => {
+      toast.success(`${id} posted — ${partners.find((p) => p.id === vals.partnerId)?.name}`, { description: `${kg(vals.totalCapacityKg - vals.usedCapacityKg)} available` });
+      onDone(id);
     });
-    toast.success(`${id} posted — ${partners.find((p) => p.id === vals.partnerId)?.name}`, { description: `${kg(vals.totalCapacityKg - vals.usedCapacityKg)} available` });
-    onDone(id);
   });
 
   return (
@@ -677,8 +681,8 @@ export function PartnersDialog({ open, onOpenChange, startAdding, onAdded }: { o
     }
   }, [open, startAdding, reset]);
 
-  const submit = handleSubmit((v) => {
-    const id = addPartner({
+  const submit = handleSubmit(async (v) => {
+    await act(() => addPartner({
       name: v.name.trim(),
       contact: { name: v.contactName.trim(), phone: v.phone.trim() },
       truckTypes: v.truckTypes,
@@ -689,14 +693,15 @@ export function PartnersDialog({ open, onOpenChange, startAdding, onAdded }: { o
         .map((x) => x.trim())
         .filter(Boolean),
       notes: v.notes?.trim() || undefined,
+    }), (id) => {
+      toast.success(`${v.name.trim()} added as ${id}`);
+      onAdded?.(id);
+      if (startAdding) onOpenChange(false);
+      else {
+        setAdding(false);
+        reset();
+      }
     });
-    toast.success(`${v.name.trim()} added as ${id}`);
-    onAdded?.(id);
-    if (startAdding) onOpenChange(false);
-    else {
-      setAdding(false);
-      reset();
-    }
   });
 
   return (
@@ -770,7 +775,7 @@ export function PartnersDialog({ open, onOpenChange, startAdding, onAdded }: { o
               <Button type="button" variant="outline" onClick={() => (startAdding ? onOpenChange(false) : setAdding(false))}>
                 Back
               </Button>
-              <Button type="submit">
+              <Button type="submit" disabled={formState.isSubmitting}>
                 <Plus /> Save partner
               </Button>
             </DialogFooter>
@@ -876,11 +881,12 @@ export function UpdateUsedDialog({ capacityId, onClose }: { capacityId: string; 
           </Button>
           <Button
             disabled={!!error}
-            onClick={() => {
-              update(post.id, n);
-              toast.success(`${post.id} updated`, { description: `${kg(post.totalCapacityKg - n)} available` });
-              onClose();
-            }}
+            onClick={() =>
+              void act(() => update(post.id, n), () => {
+                toast.success(`${post.id} updated`, { description: `${kg(post.totalCapacityKg - n)} available` });
+                onClose();
+              })
+            }
           >
             Save
           </Button>

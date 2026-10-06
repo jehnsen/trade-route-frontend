@@ -9,6 +9,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowRight, ArrowUpRight, FileText, Kanban, List, MapPin, MessageCircle, Phone, Plus, Route, UserCheck, Users, Megaphone, Target, X, type LucideIcon } from "lucide-react";
 import type { AreaId, Lead, LeadSource, LeadStage, CustomerType } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { STAFF, staffById } from "@/data/company";
 import { AREAS } from "@/data/areas";
@@ -58,8 +59,7 @@ export function LeadsView() {
   const onMove = (id: string, next: LeadStage) => {
     const lead = leads.find((l) => l.id === id);
     if (!lead || lead.stage === next) return;
-    moveLead(id, next);
-    toast.success(`${lead.businessName} → ${next}`);
+    void act(() => moveLead(id, next), () => toast.success(`${lead.businessName} → ${next}`));
   };
   const columns: ColumnDef<Lead, unknown>[] = [
     { id: "business", header: "Business / contact", accessorFn: (lead) => lead.businessName, cell: ({row}) => <div className="min-w-[170px] max-w-[240px]"><button type="button" onClick={(e) => { e.stopPropagation(); setSelected(row.original.id); }} className="cursor-pointer text-left text-[13px] font-semibold leading-relaxed hover:text-primary hover:underline">{row.original.businessName}</button><div className="mt-1 text-[11px] text-muted-foreground">{row.original.contactName}</div><div className="mt-1 flex items-start gap-1 text-[10px] text-muted-foreground"><MapPin className="mt-0.5 size-3 shrink-0" />{row.original.location}</div></div> },
@@ -159,7 +159,7 @@ function LeadDetail({ lead }: { lead: Lead }) {
           <DropdownMenuContent>
             <DropdownMenuLabel>Pipeline stage</DropdownMenuLabel>
             {STAGES.filter((s) => s !== lead.stage && s !== "Won").map((s) => (
-              <DropdownMenuItem key={s} onSelect={() => { moveLead(lead.id, s); toast.success(`Moved to ${s}`); }}>
+              <DropdownMenuItem key={s} onSelect={() => void act(() => moveLead(lead.id, s), () => toast.success(`Moved to ${s}`))}>
                 {s}
               </DropdownMenuItem>
             ))}
@@ -189,11 +189,12 @@ function LeadDetail({ lead }: { lead: Lead }) {
               title={`Convert ${lead.businessName} to a customer?`}
               description="A customer account will be created (COD terms to start), the lead will be marked Won, and you can book their first job right away."
               confirmLabel="Convert"
-              onConfirm={() => {
-                const id = convert(lead.id);
-                toast.success(`${lead.businessName} is now customer ${id}`, { action: { label: "New job", onClick: () => router.push(`/jobs/new?customer=${id}`) } });
-                router.push(`/customers/${id}`);
-              }}
+              onConfirm={() =>
+                void act(() => convert(lead.id), (id) => {
+                  toast.success(`${lead.businessName} is now customer ${id}`, { action: { label: "New job", onClick: () => router.push(`/jobs/new?customer=${id}`) } });
+                  router.push(`/customers/${id}`);
+                })
+              }
             />
           )
         )}
@@ -207,11 +208,12 @@ function LeadDetail({ lead }: { lead: Lead }) {
           variant="secondary"
           className="justify-self-start"
           disabled={note.trim().length < 3}
-          onClick={() => {
-            moveLead(lead.id, lead.stage, note.trim());
-            setNote("");
-            toast.success("Note added");
-          }}
+          onClick={() =>
+            void act(() => moveLead(lead.id, lead.stage, note.trim()), () => {
+              setNote("");
+              toast.success("Note added");
+            })
+          }
         >
           Add note
         </Button>
@@ -248,12 +250,13 @@ function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
   const add = useAppStore((s) => s.addLead);
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { businessName: "", contactName: "", phone: "", source: "Facebook Group", location: "", businessType: "Seafood Dealer", areaId: "none", cargoInterest: "", lane: "", potentialVolume: "", potentialMonthlyValue: 0, ownerId: "ST-02" } });
   const e = form.formState.errors;
-  const submit = form.handleSubmit((v) => {
-    add({ businessName: v.businessName, contactName: v.contactName, phone: v.phone, source: v.source, location: v.location, areaId: v.areaId === "none" ? undefined : (v.areaId as AreaId), businessType: v.businessType, cargoInterest: v.cargoInterest, lane: v.lane, potentialVolume: v.potentialVolume, potentialMonthlyValue: v.potentialMonthlyValue, stage: "New", ownerId: v.ownerId });
-    toast.success(`${v.businessName} added to the pipeline`);
-    form.reset();
-    onOpenChange(false);
-  });
+  const submit = form.handleSubmit((v) =>
+    act(() => add({ businessName: v.businessName, contactName: v.contactName, phone: v.phone, source: v.source, location: v.location, areaId: v.areaId === "none" ? undefined : (v.areaId as AreaId), businessType: v.businessType, cargoInterest: v.cargoInterest, lane: v.lane, potentialVolume: v.potentialVolume, potentialMonthlyValue: v.potentialMonthlyValue, stage: "New", ownerId: v.ownerId }), () => {
+      toast.success(`${v.businessName} added to the pipeline`);
+      form.reset();
+      onOpenChange(false);
+    }),
+  );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -323,7 +326,7 @@ function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
           </Field>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit"><Plus /> Add lead</Button>
+            <Button type="submit" disabled={form.formState.isSubmitting}><Plus /> Add lead</Button>
           </DialogFooter>
         </form>
       </DialogContent>

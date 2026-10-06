@@ -684,6 +684,50 @@ export interface BackhaulBookingRequest {
   jobId?: string;
 }
 
+/** A listed return leg as outside shippers see it: no trip id, plate, driver or exact truck times. */
+export interface ShipperListing {
+  listingId: string;
+  date: ISODate;
+  vehicleType: string;
+  body: string;
+  /** Generic name used in fit-check messages ("our truck"). */
+  truckLabel: string;
+  /** Times are the start of the hour; shippers see two-hour windows. */
+  leg: { origin: Place; destination: Place; routeAreas: AreaId[]; areaEta: Partial<Record<AreaId, ISODateTime>>; departureAt: ISODateTime; arrivalAt: ISODateTime };
+  pickupAreas: AreaId[];
+  openKg: number;
+  accepting: boolean;
+  listing: Pick<BackhaulListing, "ratePerKg" | "minimumCharge" | "acceptedCargo" | "restrictions">;
+}
+
+/** A shipper's own request as they see it when they check its status. */
+export interface ShipperRequestView {
+  id: string;
+  status: BackhaulRequestStatus;
+  declineReason?: string;
+  cargoDescription: string;
+  quantity: number;
+  unit: string;
+  weightKg: number;
+  pickup: Place;
+  dropoff: Place;
+  quotedFreight: number;
+  tripDate?: ISODate;
+  /** Start of the two-hour pickup window. */
+  pickupWindowAt?: ISODateTime;
+  bookingRef?: string;
+  bookingStatus?: JobStatus;
+}
+
+/** The public Return trips page: the operator's contact details and open return legs. */
+export interface PublicBackhaulBoard {
+  profile: PublicTenantProfile;
+  listings: ShipperListing[];
+}
+
+/** A shipper's request from the public page (customer links are set by dispatch, never by shippers). */
+export type ShipperRequestInput = Omit<NewBackhaulRequestInput, "customerId">;
+
 // ─── Finance (freight billing) ──────────────────────────────────────────────
 export type PaymentMethod = "Cash" | "Bank Transfer" | "GCash" | "Maya" | "Check" | "COD";
 
@@ -760,6 +804,301 @@ export interface AppNotification {
   read: boolean;
   roles: Role[];
 }
+
+// ─── Tenant ─────────────────────────────────────────────────────────────────
+/** The operator's own business profile, printed on receipts and shown on the portal. */
+export interface CompanyProfile {
+  name: string;
+  shortName: string;
+  address: string;
+  warehouse: string;
+  phone: string;
+  mobile: string;
+  messenger: string;
+  email: string;
+  tin: string;
+  businessHours: string;
+  bankAccountMasked: string;
+  gcashMasked: string;
+}
+
+/** Per-organization reference data loaded with the session: the business, its people and trucks. */
+export interface TenantProfile {
+  company: CompanyProfile;
+  staff: StaffMember[];
+  helpers: Helper[];
+  trucks: Truck[];
+  drivers: Driver[];
+  /** Freight revenue recorded in the paper ledger before go-live, per customer. */
+  lifetimeBaseline: Record<string, number>;
+  /** Trading module: product sales before go-live, per customer. */
+  salesLifetimeBaseline: Record<string, number>;
+}
+
+/** What the public pages may know about the operator: the business and its dispatch desk. */
+export type PublicTenantProfile = Pick<TenantProfile, "company" | "staff">;
+
+// ─── Operations data & API contract ─────────────────────────────────────────
+/** Every operational record of one organization, as the API serves it. */
+export interface OpsData {
+  customers: Customer[];
+  leads: Lead[];
+  quotes: FreightQuote[];
+  jobs: LogisticsJob[];
+  loads: Load[];
+  trips: Trip[];
+  deliveries: Delivery[];
+  payments: Payment[];
+  expenses: Expense[];
+  fuelLogs: FuelLog[];
+  maintenance: MaintenanceRecord[];
+  documents: VehicleDocument[];
+  notifications: AppNotification[];
+  truckingPartners: TruckingPartner[];
+  boardLoads: AvailableLoad[];
+  boardCapacity: AvailableCapacity[];
+  backhaulListings: BackhaulListing[];
+  backhaulRequests: BackhaulBookingRequest[];
+  orders: Order[];
+  purchaseOrders: PurchaseOrder[];
+  salesPayments: SalesPayment[];
+  inventory: InventoryBatch[];
+  standingOrders: StandingOrder[];
+  quoteRequests: QuoteRequest[];
+}
+export type OpsCollection = keyof OpsData;
+
+/** Records added, changed or removed in one collection. Records are replaced whole. */
+export interface CollectionChange<T> {
+  upsert: T[];
+  remove: string[];
+  /** Full id order of the collection, sent when records were added or moved. */
+  order?: string[];
+}
+export type OpsChanges = { [K in OpsCollection]?: CollectionChange<OpsData[K][number]> };
+
+/** Who a snapshot was served to. */
+export interface OpsViewer {
+  name: string;
+  role: Role;
+  /** The driver (DRV-…) or customer (CUS-…) this login acts as. */
+  subjectRef: string | null;
+  /** Owners may preview the app as the other desks (the API still applies their own permissions). */
+  canViewAs: boolean;
+  /** `demo`: a demo organization whose data owners can reset to the seed. */
+  organization: { name: string; code: string; demo: boolean };
+}
+
+/** GET /ops/snapshot: the organization's data at one version. */
+export interface OpsSnapshot {
+  viewer: OpsViewer;
+  version: number;
+  /** The operations clock (demo clock while the seed is anchored to it). */
+  now: ISODateTime;
+  profile: TenantProfile;
+  data: OpsData;
+}
+
+/** Response of every ops command: its result plus the records it changed. */
+export interface OpsCommandResponse<R = unknown> {
+  result: R;
+  changes: OpsChanges;
+  version: number;
+  now: ISODateTime;
+}
+
+// ─── Command inputs ─────────────────────────────────────────────────────────
+// What the screens send to the ops API. The server fills ids, timestamps and attribution.
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+export interface CargoLineInput {
+  cargoDescription: string;
+  cargoCategory: CargoCategory;
+  quantity: number;
+  unit: string;
+  weightKg: number;
+  handlingNotes?: string;
+}
+
+export interface NewJobInput {
+  customerId: string;
+  source: JobSource;
+  leg: Leg;
+  pickup: Place;
+  dropoff: Place;
+  consignee: { name: string; phone: string };
+  cargo: CargoLineInput[];
+  truckRequirement: TruckRequirement;
+  pickupAt: ISODateTime;
+  requiredBy: ISODateTime;
+  freightCharge: number;
+  additionalCharges: Charge[];
+  paymentTerms: PaymentTerms;
+  instructions?: string;
+  notes?: string;
+  status: "Inquiry" | "Confirmed" | "Awaiting Dispatch";
+  quoteId?: string;
+  loadType?: LoadType;
+}
+
+export interface NewQuoteInput {
+  customerId?: string;
+  leadId?: string;
+  pickup: Place;
+  dropoff: Place;
+  cargoDescription: string;
+  cargoCategory: CargoCategory;
+  weightKg: number;
+  volumeCbm?: number;
+  truckRequirement: TruckRequirement;
+  pickupDate: ISODate;
+  requiredDate: ISODate;
+  freightCharge: number;
+  additionalCharges: Charge[];
+  notes?: string;
+  validUntil: ISODate;
+  status: "Draft" | "Sent";
+}
+
+export type NewLeadInput = Omit<Lead, "id" | "activities" | "createdAt" | "lastContactAt">;
+export type NewCustomerInput = Omit<Customer, "id" | "customerSince" | "status" | "paymentBehavior" | "frequency">;
+
+export interface NewCompanyLoadInput {
+  cargoDescription: string;
+  cargoCategory: CargoCategory;
+  quantity: number;
+  unit: string;
+  weightKg: number;
+  leg: Leg;
+  pickup: Place;
+  destination: Place;
+  estimatedValue?: number;
+  handlingNotes?: string;
+  tripId?: string;
+}
+
+export interface NewTripInput {
+  date: ISODate;
+  truckId: string;
+  driverId: string;
+  helperIds: string[];
+  routeId: string;
+  departure: ISODateTime;
+  notes?: string;
+}
+
+/** Trip statuses a dispatcher (or driver) sets directly; the rest follow stops and deliveries. */
+export type ManualTripStatus = Extract<TripStatus, "Loading" | "Ready" | "Dispatched" | "Cancelled">;
+
+export interface TripCloseInput {
+  odometerEnd: number;
+  fuel?: { liters: number; pricePerLiter: number; station: string };
+}
+
+export type PodInput = Omit<ProofOfDelivery, "signedAt" | "receiptNo"> & { receiptNo?: string };
+export type DeliveryIssueInput = Pick<DeliveryIssue, "type" | "note">;
+
+export interface NewPaymentInput {
+  invoiceId: string;
+  jobId: string;
+  customerId: string;
+  amount: number;
+  method: PaymentMethod;
+  reference: string;
+  notes?: string;
+}
+
+export type NewExpenseInput = Omit<Expense, "id" | "recordedBy">;
+
+export interface NewFuelLogInput {
+  truckId: string;
+  tripId?: string;
+  driverId: string;
+  date: ISODateTime;
+  odometerKm: number;
+  liters: number;
+  pricePerLiter: number;
+  station: string;
+  areaId: AreaId;
+  fullTank: boolean;
+  receiptRef?: string;
+}
+
+export type NewMaintenanceInput = Omit<MaintenanceRecord, "id">;
+export type MaintenanceUpdateInput = Partial<Pick<MaintenanceRecord, "cost" | "odometerKm" | "date" | "notes">>;
+export type DocumentRenewalInput = Pick<VehicleDocument, "reference" | "issueDate" | "expiryDate"> & { attachment?: string };
+
+type BoardManaged = "id" | "createdAt" | "postedBy" | "status" | "closedReason";
+export type NewBoardLoadInput = Omit<AvailableLoad, BoardManaged | "jobId" | "capacityId" | "bookedAt">;
+export type NewCapacityInput = DistributiveOmit<AvailableCapacity, BoardManaged>;
+export type NewPartnerInput = Omit<TruckingPartner, "id" | "since">;
+
+export interface BookBoardLoadInput {
+  loadId: string;
+  /** Capacity post the load was matched with (our trip or a partner truck). */
+  capacityId?: string;
+  /** Bill-to customer; when empty a new customer is created from the poster. */
+  customerId?: string;
+  newCustomerName?: string;
+  freightCharge: number;
+  paymentTerms: PaymentTerms;
+  consignee: { name: string; phone: string };
+}
+
+export type PublishListingInput = Pick<BackhaulListing, "tripId" | "ratePerKg" | "minimumCharge" | "acceptedCargo" | "restrictions">;
+export type NewBackhaulRequestInput = Omit<BackhaulBookingRequest, "id" | "quotedFreight" | "status" | "createdAt" | "respondedAt" | "respondedBy" | "declineReason" | "jobId">;
+
+export interface ConfirmBackhaulRequestInput {
+  requestId: string;
+  /** Bill-to customer; when empty a new customer is created from the shipper. */
+  customerId?: string;
+  freightCharge: number;
+  paymentTerms: PaymentTerms;
+}
+
+/** Result of booking a board post or confirming a backhaul request. Re-booking never creates a second job. */
+export interface BookingResult {
+  jobId: string;
+  created: boolean;
+}
+
+export interface NewOrderInput {
+  customerId: string;
+  source: OrderSource;
+  items: OrderItem[];
+  discount: number;
+  deliveryFee: number;
+  deliveryDate: ISODate;
+  paymentTerms: PaymentTerms;
+  addressId: string;
+  notes?: string;
+  status: "Draft" | "Pending Confirmation" | "Confirmed";
+  fulfillment?: Fulfillment;
+  deliveryWindow?: string;
+}
+export type OrderEditInput = Pick<Order, "deliveryDate" | "discount" | "deliveryFee" | "notes" | "items">;
+
+export interface NewSalesPaymentInput {
+  invoiceId: string;
+  orderId: string;
+  customerId: string;
+  amount: number;
+  method: SalesPaymentMethod;
+  reference: string;
+  notes?: string;
+}
+
+export interface NewPOInput {
+  supplierId: string;
+  items: POItem[];
+  pickupDate: ISODate;
+  status: "Draft" | "Sent";
+  notes?: string;
+}
+
+export type StandingOrderInput = Omit<StandingOrder, "id"> & { id?: string };
+export type NewQuoteRequestInput = Omit<QuoteRequest, "id" | "status" | "createdAt">;
 
 // ═══ Trading module (Phase 2 preview) ════════════════════════════════════════
 // Product sales, procurement and stock. Independent of trips and cargo.
@@ -1008,6 +1347,26 @@ export interface QuoteRequest {
   quotedPrice?: number;
   createdAt: ISODateTime;
   customerId?: string;
+}
+
+/** Stock position of one product at the Lucena warehouse (derived from batches, orders and POs). */
+export interface ProductStock {
+  productId: string;
+  onHand: number;
+  damaged: number;
+  reserved: number;
+  demand: number;
+  available: number;
+  incoming: number;
+  inTransit: number;
+  value: number;
+  shortage: number;
+}
+
+/** The public storefront: the operator's contact details and product availability. */
+export interface PublicStorefront {
+  profile: PublicTenantProfile;
+  stock: ProductStock[];
 }
 
 export interface CartLine {

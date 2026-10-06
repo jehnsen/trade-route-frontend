@@ -9,6 +9,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { AlertTriangle, Boxes, Building2, MoreHorizontal, Plus, Truck } from "lucide-react";
 import type { CargoCategory, Leg, Load, LoadStatus, LoadType } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useTripMetrics } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
@@ -259,10 +260,7 @@ export function LoadsView({ initialQ, initialTrip }: { initialQ?: string; initia
           date={assigning.createdAt.slice(0, 10) < TODAY ? TODAY : assigning.createdAt.slice(0, 10)}
           weightKg={assigning.weightKg}
           currentTripId={assigning.tripId}
-          onAssign={(tripId) => {
-            assignLoad(assigning.id, tripId);
-            toast.success(tripId ? `${assigning.id} added to ${tripId}` : `${assigning.id} removed from trip`);
-          }}
+          onAssign={(tripId) => void act(() => assignLoad(assigning.id, tripId), () => toast.success(tripId ? `${assigning.id} added to ${tripId}` : `${assigning.id} removed from trip`))}
         />
       )}
     </>
@@ -307,10 +305,10 @@ function AddCompanyLoadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     if (v.quantity) setValue("weightKg", Math.round(v.quantity * c.kgPerUnit));
     if (c.valuePerKg && v.weightKg) setValue("estimatedValue", Math.round(v.weightKg * c.valuePerKg));
   };
-  const submit = handleSubmit((vals) => {
+  const submit = handleSubmit(async (vals) => {
     const pickup = PLACES.find((p) => p.name === vals.pickup)!;
     const dest = PLACES.find((p) => p.name === vals.destination)!;
-    const id = create({
+    await act(() => create({
       cargoDescription: vals.cargoDescription,
       cargoCategory: vals.cargoCategory,
       quantity: vals.quantity,
@@ -322,10 +320,11 @@ function AddCompanyLoadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       estimatedValue: vals.estimatedValue || undefined,
       handlingNotes: vals.handlingNotes || undefined,
       tripId: vals.tripId || undefined,
+    }), (id) => {
+      toast.success(`Company cargo ${id} added`, { description: vals.tripId ? `Assigned to ${vals.tripId}` : "Waiting for a trip on the Loads board." });
+      reset();
+      onOpenChange(false);
     });
-    toast.success(`Company cargo ${id} added`, { description: vals.tripId ? `Assigned to ${vals.tripId}` : "Waiting for a trip on the Loads board." });
-    reset();
-    onOpenChange(false);
   });
   const tripM = v.tripId ? metrics.get(v.tripId) : undefined;
   return (
@@ -410,7 +409,7 @@ function AddCompanyLoadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={formState.isSubmitting}>
               <Plus /> Add cargo {Number.isFinite(v.estimatedValue) && v.estimatedValue ? `(${peso(v.estimatedValue)})` : ""}
             </Button>
           </DialogFooter>

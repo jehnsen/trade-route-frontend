@@ -6,6 +6,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Fuel } from "lucide-react";
 import type { AreaId } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { TODAY } from "@/data/company";
 import { AREAS } from "@/data/areas";
@@ -62,14 +63,18 @@ export function FuelLogDialog({ open, onOpenChange, tripId, truckId }: { open: b
   const e = formState.errors;
   const truckTrips = trips.filter((t) => t.truckId === v.truckId && t.date >= "2026-09-18" && t.status !== "Cancelled").sort((a, b) => b.departure.localeCompare(a.departure));
   const minOdo = Math.max(0, ...fuelLogs.filter((f) => f.truckId === v.truckId).map((f) => f.odometerKm));
-  const submit = handleSubmit((vals) => {
+  const submit = handleSubmit(async (vals) => {
     if (vals.odometerKm < minOdo) {
       form.setError("odometerKm", { message: `Lower than the last fill-up (${minOdo.toLocaleString("en-PH")} km)` });
       return;
     }
-    const id = add({ truckId: vals.truckId, tripId: vals.tripId || undefined, driverId: vals.driverId, date: `${vals.date}T${vals.time}`, odometerKm: vals.odometerKm, liters: vals.liters, pricePerLiter: vals.pricePerLiter, station: vals.station, areaId: vals.areaId as AreaId, fullTank: vals.fullTank, receiptRef: vals.receiptRef || undefined });
-    toast.success(`Fuel log ${id} saved`, { description: `${vals.liters} L · ${peso(vals.liters * vals.pricePerLiter)} added as a Diesel expense${vals.tripId ? ` on ${vals.tripId}` : ""}.` });
-    onOpenChange(false);
+    await act(
+      () => add({ truckId: vals.truckId, tripId: vals.tripId || undefined, driverId: vals.driverId, date: `${vals.date}T${vals.time}`, odometerKm: vals.odometerKm, liters: vals.liters, pricePerLiter: vals.pricePerLiter, station: vals.station, areaId: vals.areaId as AreaId, fullTank: vals.fullTank, receiptRef: vals.receiptRef || undefined }),
+      (id) => {
+        toast.success(`Fuel log ${id} saved`, { description: `${vals.liters} L · ${peso(vals.liters * vals.pricePerLiter)} added as a Diesel expense${vals.tripId ? ` on ${vals.tripId}` : ""}.` });
+        onOpenChange(false);
+      },
+    );
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -201,7 +206,7 @@ export function FuelLogDialog({ open, onOpenChange, tripId, truckId }: { open: b
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={formState.isSubmitting}>
               <Fuel /> Save fuel log
             </Button>
           </DialogFooter>

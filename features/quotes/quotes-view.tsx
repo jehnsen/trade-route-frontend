@@ -7,6 +7,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { ArrowRight, ArrowUpRight, Route, X, type LucideIcon, CalendarClock, CheckCircle2, ClipboardList, FileText, Handshake, Plus, Send, XCircle } from "lucide-react";
 import type { FreightQuote, QuoteStatus } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { TODAY } from "@/data/company";
 import { areaName } from "@/data/areas";
@@ -217,11 +218,12 @@ function QuoteSheet({ id, onClose }: { id: string | null; onClose: () => void })
                   <Button
                     variant="destructive"
                     disabled={reason.trim().length < 3}
-                    onClick={() => {
-                      setStatus(quote.id, "Rejected", reason.trim());
-                      toast(`${quote.id} marked rejected`);
-                      setRejecting(false);
-                    }}
+                    onClick={() =>
+                      void act(() => setStatus(quote.id, "Rejected", reason.trim()), () => {
+                        toast(`${quote.id} marked rejected`);
+                        setRejecting(false);
+                      })
+                    }
                   >
                     <XCircle /> Mark rejected
                   </Button>
@@ -231,31 +233,26 @@ function QuoteSheet({ id, onClose }: { id: string | null; onClose: () => void })
               <div className="grid gap-2">
                 {status === "Draft" && (
                   <Button
-                    onClick={() => {
-                      setStatus(quote.id, "Sent");
-                      toast.success(`${quote.id} marked as sent`);
-                    }}
+                    onClick={() => void act(() => setStatus(quote.id, "Sent"), () => toast.success(`${quote.id} marked as sent`))}
                   >
                     <Send /> Mark as sent
                   </Button>
                 )}
                 {(status === "Sent" || status === "Expired") && (
                   <Button
-                    onClick={() => {
-                      setStatus(quote.id, "Accepted");
-                      toast.success(`${quote.id} accepted`, { description: "Create the job so dispatch can plan it." });
-                    }}
+                    onClick={() => void act(() => setStatus(quote.id, "Accepted"), () => toast.success(`${quote.id} accepted`, { description: "Create the job so dispatch can plan it." }))}
                   >
                     <Handshake /> Customer accepted
                   </Button>
                 )}
                 {status === "Accepted" && !quote.jobId && (
                   <Button
-                    onClick={() => {
-                      const jobId = convert(quote.id);
-                      toast.success(`Job ${jobId} created from ${quote.id}`, { description: lead ? `${lead.businessName} converted to a customer.` : "It now appears on the Dispatch board." });
-                      router.push(`/jobs/${jobId}`);
-                    }}
+                    onClick={() =>
+                      void act(() => convert(quote.id), (jobId) => {
+                        toast.success(`Job ${jobId} created from ${quote.id}`, { description: lead ? `${lead.businessName} converted to a customer.` : "It now appears on the Dispatch board." });
+                        router.push(`/jobs/${jobId}`);
+                      })
+                    }
                   >
                     <ClipboardList /> Create logistics job
                   </Button>

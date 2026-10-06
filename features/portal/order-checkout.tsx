@@ -7,8 +7,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { CheckCircle2, ClipboardList, MessageCircle, ShoppingCart, Trash2 } from "lucide-react";
 import type { AreaId, PaymentTerms } from "@/types";
-import { useAppStore, PORTAL_CUSTOMER_ID } from "@/lib/store";
+import { act } from "@/lib/act";
+import { useAppStore, usePortalCustomerId } from "@/lib/store";
 import { useHydrated } from "@/lib/store";
+import { PortalAccountGate } from "@/components/portal/portal-sign-in";
 import { AREAS } from "@/data/areas";
 import { COMPANY, TOMORROW, TODAY } from "@/data/company";
 import { productById } from "@/data/products";
@@ -35,13 +37,18 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 export function OrderCheckout() {
+  const customerId = usePortalCustomerId();
+  return <PortalAccountGate what="place a wholesale order">{customerId && <Checkout customerId={customerId} />}</PortalAccountGate>;
+}
+
+function Checkout({ customerId }: { customerId: string }) {
   const hydrated = useHydrated((s) => s.hydrated);
   const cart = useAppStore((s) => s.cart);
   const setQty = useAppStore((s) => s.setCartQty);
   const remove = useAppStore((s) => s.removeFromCart);
   const clear = useAppStore((s) => s.clearCart);
   const createOrder = useAppStore((s) => s.createOrder);
-  const customer = useAppStore((s) => s.customers.find((c) => c.id === PORTAL_CUSTOMER_ID))!;
+  const customer = useAppStore((s) => s.customers.find((c) => c.id === customerId))!;
   const [placed, setPlaced] = React.useState<string | null>(null);
 
   const addr = customer.addresses[0];
@@ -66,10 +73,10 @@ export function OrderCheckout() {
   const total = subtotal + fee.fee;
   const belowMoq = lines.filter((l) => l.quantity < l.p.moq);
 
-  const submit = form.handleSubmit((vals) => {
+  const submit = form.handleSubmit(async (vals) => {
     if (!lines.length || belowMoq.length) return;
     const terms: PaymentTerms = vals.paymentPreference === "Existing Credit Account" ? customer.paymentTerms : "COD";
-    const id = createOrder({
+    await act(() => createOrder({
       customerId: customer.id,
       source: "Customer Portal",
       items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPrice: l.p.wholesalePrice })),
@@ -79,12 +86,12 @@ export function OrderCheckout() {
       paymentTerms: terms,
       addressId: addr.id,
       status: "Pending Confirmation",
-      createdBy: `${vals.contactPerson} (portal)`,
       notes: [`Payment preference: ${vals.paymentPreference}`, `Deliver to: ${vals.deliveryAddress}`, `Contact: ${vals.contactPerson} · ${vals.mobile}`, vals.instructions ? `Instructions: ${vals.instructions}` : ""].filter(Boolean).join(" · "),
+    }), (id) => {
+      clear();
+      setPlaced(id);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
-    clear();
-    setPlaced(id);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
   if (placed)

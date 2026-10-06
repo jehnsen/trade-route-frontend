@@ -1,6 +1,6 @@
 "use client";
 
-import type { Customer } from "@/types";
+import type { Customer, ProductStock } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { LIFETIME_BASELINE } from "@/data/finance";
 import { getCustomerStats, getInvoiceMap, getInvoices, getTripMetricsMap } from "@/lib/logistics";
@@ -84,10 +84,15 @@ export function useSalesCustomerStats() {
   return getSalesCustomerStats(customers, orders, useSalesInvoices());
 }
 
+const stockMapOf = memoizeLast((stock: ProductStock[]) => new Map(stock.map((x) => [x.productId, x])));
+
+/** Stock per product. Visitors and customers (no stock records loaded) see the storefront's availability. */
 export function useStock() {
   const inventory = useAppStore((s) => s.inventory);
   const orders = useAppStore((s) => s.orders);
   const pos = useAppStore((s) => s.purchaseOrders);
+  const storefront = useAppStore((s) => s.storefrontStock);
+  if (!inventory.length && storefront) return stockMapOf(storefront);
   return getStockMap(inventory, orders, pos);
 }
 

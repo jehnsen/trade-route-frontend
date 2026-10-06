@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { addDays, format, parseISO } from "date-fns";
 import { Calculator, Plus, Save, Send, Trash2 } from "lucide-react";
 import type { CargoCategory, Place, TruckRequirement } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { TODAY, TOMORROW } from "@/data/company";
 import { areaById, LUCENA_WAREHOUSE, PLACES } from "@/data/areas";
@@ -92,8 +93,8 @@ export function QuoteFormDialog({ open, onOpenChange, initialParty, onCreated }:
   const total = (Number.isFinite(v.freightCharge) ? v.freightCharge : 0) + v.charges.reduce((s, c) => s + (Number.isFinite(c.amount) ? c.amount : 0), 0);
 
   const submit = (status: "Draft" | "Sent") =>
-    handleSubmit((vals) => {
-      const id = createQuote({
+    handleSubmit(async (vals) => {
+      await act(() => createQuote({
         customerId: customer?.id,
         leadId: lead?.id,
         pickup: resolve(vals.pickupKey)!,
@@ -109,11 +110,12 @@ export function QuoteFormDialog({ open, onOpenChange, initialParty, onCreated }:
         notes: vals.notes || undefined,
         validUntil: vals.validUntil,
         status,
+      }), (id) => {
+        toast.success(status === "Sent" ? `Quote ${id} sent` : `Draft ${id} saved`, { description: status === "Sent" ? "Marked as sent — share it via Messenger or email." : "You can send it later." });
+        reset();
+        onOpenChange(false);
+        onCreated?.(id);
       });
-      toast.success(status === "Sent" ? `Quote ${id} sent` : `Draft ${id} saved`, { description: status === "Sent" ? "Marked as sent — share it via Messenger or email." : "You can send it later." });
-      reset();
-      onOpenChange(false);
-      onCreated?.(id);
     })();
 
   return (

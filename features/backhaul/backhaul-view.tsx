@@ -6,6 +6,7 @@ import { format, parseISO, subDays } from "date-fns";
 import { toast } from "sonner";
 import { ArrowLeftRight, ArrowRight, BarChart3, Building2, CalendarDays, CheckCircle2, Handshake, PackagePlus, Plus, Route as RouteIcon, Truck, Undo2 } from "lucide-react";
 import type { LogisticsJob, Trip } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useBoardMatches, useCapacityViews, useCustomerMap, useTripMetrics } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
@@ -176,10 +177,7 @@ export function BackhaulView() {
                           <div className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{o.job.id} · {o.job.pickup.name} → {o.job.dropoff.name}</div>
                         </div>
                         <div className="text-xs"><div className="font-semibold tabular">{kg(o.job.weightKg)} <span className="ml-2 font-normal text-muted-foreground">{peso(jobTotal(o.job))}</span></div><div className="mt-1 text-[11px] text-muted-foreground">{o.onRoute ? `${areaName(o.job.pickup.areaId)} · on route` : "Off route · review pickup"}</div><div className="mt-1 text-[11px] text-primary">{kg(o.freeAfter)} free after assignment</div></div>
-                        <Button size="sm" className="justify-self-start text-xs sm:justify-self-end" onClick={() => {
-                          assign(o.job.id, o.trip.id);
-                          toast.success(`${o.job.id} added to ${truck.code}'s return leg`, { description: `${o.trip.id} · ${kg(o.freeAfter)} return capacity left` });
-                        }}><CheckCircle2 /> Assign to {truck.code}</Button>
+                        <Button size="sm" className="justify-self-start text-xs sm:justify-self-end" onClick={() => void act(() => assign(o.job.id, o.trip.id), () => toast.success(`${o.job.id} added to ${truck.code}'s return leg`, { description: `${o.trip.id} · ${kg(o.freeAfter)} return capacity left` }))}><CheckCircle2 /> Assign to {truck.code}</Button>
                       </li>
                     );
                   })}

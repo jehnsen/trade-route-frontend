@@ -11,18 +11,33 @@ Lead → Quote → Logistics Job → Loads → Dispatch → Trip (stops) → Del
 
 The **Load Board** feeds the loop from the side: loads and truck space posted in Messenger / Viber GCs, Facebook groups and direct calls are logged in one place, matched against our trips with explainable rules, and booked as Logistics Jobs.
 
-No backend. All data is fictional, generated deterministically, and stored client-side (Zustand, persisted to `localStorage`). The demo clock is fixed at **Fri, Sep 25, 2026 · 7:48 AM**.
+Data lives in the **TradeLoop API** ([tradeloop-backend](../../Nodejs%20backend/tradeloop-backend), NestJS + PostgreSQL). All demo data is fictional and generated deterministically by the API's seed. The operations clock starts at **Fri, Sep 25, 2026 · 7:48 AM** and moves two minutes per recorded event.
 
 ## Run
 
+Start the API first (see its README): Postgres + Redis in Docker, then `npm run migration:run`, `npm run seed` and `npm run start:dev` (port 4000).
+
 ```bash
+cp .env.example .env.local   # TRADELOOP_API_URL, NEXT_PUBLIC_OPS_ORG, demo sign-in hints
 npm install
-npm run dev          # http://localhost:3000
-npm run build        # production build (type-checks)
+npm run dev                  # http://localhost:3000 — sign in with a demo account
+npm run build                # production build (type-checks)
 npm run typecheck
-npm run check:seed   # data volume, utilization, AR aging + relationship checks on the logistics seed
-npm run check:flows  # exercises store actions (assign, POD, payments, quotes, trips, load board) and checks consistency
 ```
+
+Demo accounts (password `DevPassword123!`, from the API seed): `owner@`, `dispatch@`, `sales@`, `accounting@`, `warehouse@`, `procurement@`, `driver@` (Joel Mendoza, Truck 01) and `driver2@lucenafresh.local`, plus the portal customer `marco@seasidegrill.local`. The sign-in page lists them in development.
+
+The seed and consistency checks (`check:seed`, `check:flows`) live in the API now, next to the commands they exercise.
+
+## Architecture
+
+- **Reads:** after sign-in the app loads the organization's whole data set once (`GET /ops/snapshot`) into the Zustand store (`lib/store.ts`). Screens and derived values (invoices, trip metrics, board matches…) work on it exactly as before.
+- **Writes:** every store action is an API command (`POST /ops/jobs`, `/ops/trips/:id/status`, …). The API runs the workflow, persists it and answers with the records it changed; the store applies that change set (`lib/ops-data.ts`). Business rules the API refuses come back as a reason the screens toast (`lib/act.ts`).
+- **Shared domain:** `types/index.ts`, the reference data in `data/` and the rules in `lib/logistics.ts`, `lib/load-board.ts`, `lib/backhaul-marketplace.ts`, `lib/calc.ts`, `lib/selectors.ts` are vendored into the API (`npm run domain:sync` there), so both sides plan stops, compute metrics and match loads identically.
+- **Tenant registries:** the organization's company profile, staff, helpers, trucks, drivers and revenue baselines arrive with the snapshot and fill `data/company.ts`, `data/fleet.ts`, `data/finance.ts` (`applyTenantProfile` in `data/tenant.ts`). `TODAY` / `NOW` follow the API's clock (`setClock`).
+- **Session:** `/api/session/*` route handlers keep the API's rotating refresh token in an httpOnly cookie; the short-lived access token stays in memory/sessionStorage for the tab (`lib/session.ts`). Browser calls go to `/api/v1/*` on this app and are proxied to the API (`next.config.ts`). Other users' changes arrive by polling `GET /ops/version` (every 20 s and on focus).
+- **Roles:** come from the signed-in membership. Drivers only receive their own trips; customers only their own account. Owners can preview the other desks from the account menu (the API still applies the owner's permissions).
+- **Public pages:** the storefront and `/return-trips` use public endpoints (`/public/ops/:org`, `/public/ops/:org/return-trips`) that never expose trip ids, plates, drivers or exact times.
 
 ## Where to look
 
@@ -42,7 +57,7 @@ npm run check:flows  # exercises store actions (assign, POD, payments, quotes, t
 
 The trading module (product sales, stock, purchasing) is kept working under a collapsed **Trading · Phase 2 preview** sidebar group. It never feeds trips or cargo: backhaul produce is simply **company-owned cargo** on a trip. A purchase order can optionally add its pickup to a trip as company cargo.
 
-Use the account switcher in the header to preview roles (Owner, Sales, Dispatcher, Procurement, Warehouse, Accounting, Driver, Customer). The **Demo Data** badge resets everything.
+Each desk signs in with its own account (Owner, Sales, Dispatcher, Procurement, Warehouse, Accounting, Driver, Customer). Owners can preview the other desks from the account menu, and reset a demo organization from the **Demo Data** badge.
 
 Business case for owners and stakeholders: [docs/logistics-platform-benefits.md](docs/logistics-platform-benefits.md).
 
@@ -86,12 +101,11 @@ Lists **our own** return legs to Lucena for outside traders and shippers. Dispat
 ## Structure
 
 - `types/` — domain types (logistics first, trading types below)
-- `data/` — reference data (customers, fleet & documents, areas/places/routes, cargo types & demo rate card, leads), `load-board.ts` (trucking partners, board posts), `backhaul-marketplace.ts` (listings, shipper requests), `logistics-seed.ts` (logistics generator), `seed.ts` (trading generator)
-- `lib/` — `logistics.ts` (stop planning, trip metrics, billing, fleet status), `load-board.ts` (board statuses, capacity views, matching, share messages), `backhaul-marketplace.ts` (listing views, request statuses, instant quotes, fit checks), `store.ts` (Zustand actions), `calc.ts` / `selectors.ts` (trading math), `format.ts`, `nav.ts`, `domain.ts`
+- `data/` — reference data (areas/places/routes, cargo types & demo rate card, products, suppliers), the demo clock and the tenant registries (`company.ts`, `fleet.ts`, `finance.ts`, `tenant.ts`)
+- `lib/` — `logistics.ts` (stop planning, trip metrics, billing, fleet status), `load-board.ts` (board statuses, capacity views, matching, share messages), `backhaul-marketplace.ts` (listing views, request statuses, instant quotes, fit checks, shipper views), `ops-data.ts` (data set + change sets), `store.ts` (API-backed store and actions), `session.ts` + `api/` (sign-in, API client), `act.ts`, `calc.ts` / `selectors.ts` (trading math), `format.ts`, `nav.ts`, `domain.ts`
 - `hooks/use-data.ts` — memoized derived data (invoices, trip metrics, customer stats, board capacity views and matches, marketplace listing views)
 - `components/ui` — shadcn-style primitives; `components/shared` — PageHeader, KPICard, StatusBadge, LoadTypeBadge, JobSourceBadge, BoardSourceBadge, Timeline, CapacityBar, TripCard, TruckStatusCard, PodCard…; `components/data-table`, `components/charts`
-- `features/<module>/` — page-level views; `app/(internal)`, `app/(public)`, `app/driver`, `app/print` — thin route files
-- `scripts/` — `check-seed.ts`, `check-flows.ts`
+- `features/<module>/` — page-level views; `app/(internal)`, `app/(public)`, `app/driver`, `app/print`, `app/login` — thin route files; `app/api/session/*` — session cookie route handlers
 
 
 

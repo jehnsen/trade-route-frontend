@@ -7,6 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
 import type { Order, SalesPaymentMethod } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useSalesInvoiceMap } from "@/hooks/use-data";
 import { productById, productLabel } from "@/data/products";
@@ -38,14 +39,18 @@ export function RecordPaymentDialog({ order, open, onOpenChange }: { order: Orde
   });
   const { register, handleSubmit, formState, control, watch } = form;
   const amount = watch("amount");
-  const submit = handleSubmit((v) => {
+  const submit = handleSubmit(async (v) => {
     if (v.amount > balance + 0.5) {
       form.setError("amount", { message: `Cannot exceed the ${peso(balance)} balance` });
       return;
     }
-    const receipt = record({ invoiceId: invoiceIdForOrder(order.id), orderId: order.id, customerId: order.customerId, amount: v.amount, method: v.method, reference: v.reference, notes: v.notes });
-    toast.success(`Payment of ${peso(v.amount)} recorded`, { description: `${receipt} · applied to ${invoiceIdForOrder(order.id)}` });
-    onOpenChange(false);
+    await act(
+      () => record({ invoiceId: invoiceIdForOrder(order.id), orderId: order.id, customerId: order.customerId, amount: v.amount, method: v.method, reference: v.reference, notes: v.notes || undefined }),
+      (receipt) => {
+        toast.success(`Payment of ${peso(v.amount)} recorded`, { description: `${receipt} · applied to ${invoiceIdForOrder(order.id)}` });
+        onOpenChange(false);
+      },
+    );
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,9 +132,10 @@ export function CancelOrderDialog({ order, open, onOpenChange }: { order: Order;
             variant="destructive"
             onClick={() => {
               if (reason.trim().length < 5) return setError("Please give a short reason (at least 5 characters).");
-              cancel(order.id, reason.trim());
-              toast.success(`${order.id} cancelled`);
-              onOpenChange(false);
+              void act(() => cancel(order.id, reason.trim()), () => {
+                toast.success(`${order.id} cancelled`);
+                onOpenChange(false);
+              });
             }}
           >
             Cancel order
@@ -170,11 +176,15 @@ export function EditOrderDialog({ order, open, onOpenChange }: { order: Order; o
         <form
           noValidate
           className="grid gap-4"
-          onSubmit={form.handleSubmit((v) => {
-            update(order.id, { deliveryDate: v.deliveryDate, discount: v.discount, deliveryFee: v.deliveryFee, notes: v.notes, items: v.items.map((i, idx) => ({ ...order.items[idx], ...i })) }, { label: "Order edited", note: `New total ${peso(orderTotal({ items: v.items, discount: v.discount, deliveryFee: v.deliveryFee }))}` });
-            toast.success(`${order.id} updated`);
-            onOpenChange(false);
-          })}
+          onSubmit={form.handleSubmit((v) =>
+            act(
+              () => update(order.id, { deliveryDate: v.deliveryDate, discount: v.discount, deliveryFee: v.deliveryFee, notes: v.notes || undefined, items: v.items.map((i, idx) => ({ ...order.items[idx], ...i })) }, { label: "Order edited", note: `New total ${peso(orderTotal({ items: v.items, discount: v.discount, deliveryFee: v.deliveryFee }))}` }),
+              () => {
+                toast.success(`${order.id} updated`);
+                onOpenChange(false);
+              },
+            ),
+          )}
         >
           <div className="grid gap-2">
             {fields.map((f, idx) => {

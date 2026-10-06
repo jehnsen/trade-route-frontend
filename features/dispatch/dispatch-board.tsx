@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarDays, CalendarPlus, Clock3, GripVertical, Lock, MapPin, PackageCheck, Plus, Route, Truck, UserRound, X, type LucideIcon } from "lucide-react";
 import type { AreaId, LogisticsJob, Trip } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useTripMetrics } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
@@ -45,7 +46,7 @@ export function DispatchBoard() {
   const freeTrucks = TRUCKS.filter((t) => !dayTrips.some((x) => x.truckId === t.id));
   const draggingKg = dragging ? sumBy(dragging.ids.map((id) => jobs.find((j) => j.id === id)!).filter(Boolean), (j) => j.weightKg) : 0;
 
-  const doAssign = (ids: string[], trip: Trip) => {
+  const doAssign = async (ids: string[], trip: Trip) => {
     const list = ids.map((id) => jobs.find((j) => j.id === id)!).filter(Boolean);
     const leg = list[0]?.leg ?? "outbound";
     if (leg === "outbound" ? !isTripEditable(trip) : !canAddReturnCargo(trip)) {
@@ -54,7 +55,7 @@ export function DispatchBoard() {
     }
     const m = metrics.get(trip.id)!;
     const add = sumBy(list, (j) => j.weightKg);
-    list.forEach((j) => assign(j.id, trip.id));
+    for (const j of list) if (!(await act(() => assign(j.id, trip.id)))) return;
     const after = (leg === "outbound" ? m.outboundKg : m.returnKg) + add;
     const truck = truckById(trip.truckId);
     if (after > m.capacityKg) toast.warning(`${truck.code} ${leg === "outbound" ? "outbound" : "return"} capacity exceeded by ${kg(after - m.capacityKg)}`, { description: "Move a job to the other truck or split the cargo." });
@@ -403,10 +404,7 @@ function TruckColumn({ trip, dragging, draggingKg, onDropIds }: { trip: Trip; dr
                           variant="ghost"
                           size="icon-sm"
                           aria-label={`Remove ${j.id} from ${truck.code}`}
-                          onClick={() => {
-                            assign(j.id, null);
-                            toast(`${j.id} moved back to unassigned`);
-                          }}
+                          onClick={() => void act(() => assign(j.id, null), () => toast(`${j.id} moved back to unassigned`))}
                         >
                           <X />
                         </Button>
@@ -448,6 +446,7 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
 
 function PlanTripDialog({ truckId, date, open, onOpenChange }: { truckId: string; date: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const create = useAppStore((s) => s.createTrip);
+  const [saving, setSaving] = React.useState(false);
   const trips = useAppStore((s) => s.trips);
   const maintenance = useAppStore((s) => s.maintenance);
   const documents = useAppStore((s) => s.documents);
@@ -537,10 +536,17 @@ function PlanTripDialog({ truckId, date, open, onOpenChange }: { truckId: string
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              const id = create({ date, truckId, driverId, helperIds: helpers, routeId, departure: `${date}T${time}` });
-              toast.success(`${id} planned`, { description: warnings.length ? `Planned with ${warnings.length} warning(s) — review before dispatch.` : "Drag jobs onto the truck to build the load." });
-              onOpenChange(false);
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              await act(
+                () => create({ date, truckId, driverId, helperIds: helpers, routeId, departure: `${date}T${time}` }),
+                (id) => {
+                  toast.success(`${id} planned`, { description: warnings.length ? `Planned with ${warnings.length} warning(s) — review before dispatch.` : "Drag jobs onto the truck to build the load." });
+                  onOpenChange(false);
+                },
+              );
+              setSaving(false);
             }}
           >
             <CalendarPlus /> Plan trip

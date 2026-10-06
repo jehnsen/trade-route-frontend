@@ -10,6 +10,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { AlertTriangle, Download, HandCoins, Plus, UserPlus, Users } from "lucide-react";
 import type { AreaId, Customer, CustomerType, PaymentTerms } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerStats } from "@/hooks/use-data";
 import { AREAS, areaById, areaName } from "@/data/areas";
@@ -181,9 +182,9 @@ function AddCustomerDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const router = useRouter();
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: "", type: "Palengke Vendor", areaId: "", line1: "", barangay: "", contactName: "", phone: "", paymentTerms: "COD", salespersonId: "ST-02" } });
   const e = form.formState.errors;
-  const submit = form.handleSubmit((v) => {
+  const submit = form.handleSubmit(async (v) => {
     const area = areaById(v.areaId as AreaId);
-    const id = add({
+    await act(() => add({
       name: v.name,
       type: v.type,
       areaId: v.areaId as AreaId,
@@ -197,11 +198,12 @@ function AddCustomerDialog({ open, onOpenChange }: { open: boolean; onOpenChange
       fulfillment: area.interIsland ? "partner" : "truck",
       notes: "",
       deliveryFee: 0,
+    }), (id) => {
+      toast.success(`${v.name} added as ${id}`);
+      onOpenChange(false);
+      form.reset();
+      router.push(`/customers/${id}`);
     });
-    toast.success(`${v.name} added as ${id}`);
-    onOpenChange(false);
-    form.reset();
-    router.push(`/customers/${id}`);
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -260,7 +262,7 @@ function AddCustomerDialog({ open, onOpenChange }: { open: boolean; onOpenChange
           </Field>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit"><UserPlus /> Add customer</Button>
+            <Button type="submit" disabled={form.formState.isSubmitting}><UserPlus /> Add customer</Button>
           </DialogFooter>
         </form>
       </DialogContent>

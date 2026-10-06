@@ -5,11 +5,14 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { AlertTriangle, Camera, CheckCircle2, ChevronDown, CornerDownLeft, Flag, LogOut, MapPin, Navigation, Package, PackagePlus, Phone, Play, Truck, Warehouse } from "lucide-react";
 import type { Delivery, Load, Trip, TripStop } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore, useHydrated } from "@/lib/store";
+import { useSession } from "@/lib/session";
 import { TODAY } from "@/data/company";
 import { DRIVERS, driverById, truckById } from "@/data/fleet";
 import { ACTIVE_TRIP_STATUSES, DELIVERY_DONE, tripProgress } from "@/lib/logistics";
 import { tripRouteLine } from "@/lib/domain";
+import { dispatchContact } from "@/lib/load-board";
 import { fmtDay, fmtTime, kg, unitQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,7 +25,11 @@ import { PodDialog, ReportIssueDialog } from "@/features/deliveries/delivery-dia
 /** Mobile-first view for the driver: today's trip, stops, cargo and POD. No revenue or balances. */
 export function DriverView() {
   const hydrated = useHydrated((s) => s.hydrated);
-  const [driverId, setDriverId] = React.useState("DRV-01");
+  const viewer = useAppStore((s) => s.viewer);
+  // A driver sees their own trip; an owner previewing the driver app picks a driver.
+  const ownDriverId = viewer?.role === "driver" ? viewer.subjectRef : null;
+  const [pickedDriverId, setDriverId] = React.useState("DRV-01");
+  const driverId = ownDriverId ?? pickedDriverId;
   const trips = useAppStore((s) => s.trips);
   const loads = useAppStore((s) => s.loads);
   const deliveries = useAppStore((s) => s.deliveries);
@@ -47,18 +54,28 @@ export function DriverView() {
     <header className="sticky top-0 z-20 flex items-center justify-between gap-2 bg-[oklch(0.25_0.04_220)] px-4 py-3 text-white">
       <Logo />
       <div className="flex items-center gap-2">
-        <select value={driverId} onChange={(e) => setDriverId(e.target.value)} className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm" aria-label="Driver (demo)">
-          {DRIVERS.map((d) => (
-            <option key={d.id} value={d.id} className="text-foreground">
-              {d.name}
-            </option>
-          ))}
-        </select>
-        <Button variant="ghost" size="icon-sm" className="text-white hover:bg-white/10 hover:text-white" asChild aria-label="Back to office view" onClick={() => setRole("owner")}>
-          <Link href="/command-center">
+        {ownDriverId ? (
+          <span className="text-sm font-medium">{driver?.name}</span>
+        ) : (
+          <select value={driverId} onChange={(e) => setDriverId(e.target.value)} className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm" aria-label="Driver (preview)">
+            {DRIVERS.map((d) => (
+              <option key={d.id} value={d.id} className="text-foreground">
+                {d.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {ownDriverId ? (
+          <Button variant="ghost" size="icon-sm" className="text-white hover:bg-white/10 hover:text-white" aria-label="Sign out" onClick={() => void useSession.getState().logout()}>
             <LogOut />
-          </Link>
-        </Button>
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon-sm" className="text-white hover:bg-white/10 hover:text-white" asChild aria-label="Back to office view" onClick={() => viewer && setRole(viewer.role)}>
+            <Link href="/command-center">
+              <LogOut />
+            </Link>
+          </Button>
+        )}
       </div>
     </header>
   );
@@ -68,7 +85,7 @@ export function DriverView() {
       <>
         {header}
         <div className="p-4">
-          <EmptyState icon={Truck} title={`No trips scheduled for ${driver.name}`} description={driver.unavailable.find((u) => u.from <= TODAY && u.to >= TODAY)?.reason ?? "Check with dispatcher Noel Pascual (0919 338 5402) for changes."} className="bg-card" />
+          <EmptyState icon={Truck} title={`No trips scheduled for ${driver?.name ?? "you"}`} description={driver?.unavailable.find((u) => u.from <= TODAY && u.to >= TODAY)?.reason ?? `Check with dispatch (${dispatchContact().name}, ${dispatchContact().phone}) for changes.`} className="bg-card" />
         </div>
       </>
     );
@@ -111,10 +128,7 @@ export function DriverView() {
             <Button
               size="xl"
               className="mt-1"
-              onClick={() => {
-                setTripStatus(trip.id, "Dispatched");
-                toast.success("Trip started — ingat sa biyahe!", { description: `Dispatcher notified that ${truck.code} left Lucena.` });
-              }}
+              onClick={() => void act(() => setTripStatus(trip.id, "Dispatched"), () => toast.success("Trip started — ingat sa biyahe!", { description: `Dispatcher notified that ${truck.code} left Lucena.` }))}
             >
               <Play /> Start trip — departed Lucena
             </Button>
@@ -262,7 +276,7 @@ function StopCard({ trip, stop, loadMap, deliveries, highlight, onDialog }: { tr
               {open ? (
                 <div className="grid grid-cols-2 gap-2">
                   {d.status !== "Arrived" ? (
-                    <Button size="lg" variant="outline" onClick={() => { markArrived(d.id); toast.success("Marked arrived", { description: "Dispatcher and consignee notified (demo)." }); }}>
+                    <Button size="lg" variant="outline" onClick={() => void act(() => markArrived(d.id), () => toast.success("Marked arrived", { description: "Dispatcher notified." }))}>
                       <MapPin /> Mark arrived
                     </Button>
                   ) : (
@@ -297,13 +311,13 @@ function StopCard({ trip, stop, loadMap, deliveries, highlight, onDialog }: { tr
       {departed && !isDrop && stop.status !== "Completed" && stop.seq > 1 && (
         <div className="grid grid-cols-2 gap-2">
           {stop.status === "Pending" ? (
-            <Button size="lg" variant="outline" onClick={() => { markStopArrived(trip.id, stop.id); toast.success(`Arrived at ${stop.location.name}`); }}>
+            <Button size="lg" variant="outline" onClick={() => void act(() => markStopArrived(trip.id, stop.id), () => toast.success(`Arrived at ${stop.location.name}`))}>
               <MapPin /> Mark arrived
             </Button>
           ) : (
             <span />
           )}
-          <Button size="lg" onClick={() => { completeStop(trip.id, stop.id); toast.success(stop.type === "Backhaul Pickup" ? "Backhaul loaded" : stop.type === "Warehouse" ? "Unloaded at the bodega" : "Stop done"); }}>
+          <Button size="lg" onClick={() => void act(() => completeStop(trip.id, stop.id), () => toast.success(stop.type === "Backhaul Pickup" ? "Backhaul loaded" : stop.type === "Warehouse" ? "Unloaded at the bodega" : "Stop done"))}>
             <CheckCircle2 /> {stop.type === "Backhaul Pickup" ? "Cargo loaded" : stop.type === "Warehouse" ? "Unloaded at bodega" : "Done"}
           </Button>
         </div>

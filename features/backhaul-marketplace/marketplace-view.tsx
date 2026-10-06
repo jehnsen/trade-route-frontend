@@ -4,10 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Eye, Gauge, HandCoins, Inbox, Info, Radio, Store, Truck, Undo2, Waypoints } from "lucide-react";
-import type { BackhaulBookingRequest, BackhaulRequestStatus, LogisticsJob } from "@/types";
+import type { BackhaulBookingRequest, BackhaulRequestStatus, LogisticsJob, ShipperListing } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { useListingViews } from "@/hooks/use-data";
-import { checkRequest, REQUEST_STATUSES, requestStatus, type ListingView } from "@/lib/backhaul-marketplace";
+import { checkRequest, REQUEST_STATUSES, requestStatus, toShipperListing, type ListingView } from "@/lib/backhaul-marketplace";
 import { placeLabel, shortArea, type MatchLabel } from "@/lib/load-board";
 import { fmtDay, fmtRelative, fmtTime, kg, pct, peso, relativeDay } from "@/lib/format";
 import { groupBy, sumBy } from "@/lib/utils";
@@ -45,7 +45,8 @@ export function BackhaulMarketplaceView({ initialTab, initialQ }: { initialTab?:
   const [legFilter, setLegFilter] = React.useState("all");
   const [publishing, setPublishing] = React.useState<{ tripId?: string } | null>(null);
   const [reviewing, setReviewing] = React.useState<string | null>(null);
-  const [requesting, setRequesting] = React.useState<string | null>(null);
+  const [requesting, setRequesting] = React.useState<ShipperListing | null>(null);
+  const requestSpace = useAppStore((s) => s.requestBackhaulSpace);
 
   const legs = [...views.values()];
   const listed = legs.filter((v) => v.listing);
@@ -352,8 +353,8 @@ export function BackhaulMarketplaceView({ initialTab, initialQ }: { initialTab?:
             <EmptyState icon={Truck} title="No return trips open for booking right now." description="List a return leg to make its space visible to shippers." className="bg-card" />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {published.map((v) => (
-                <ShipperListingCard key={v.trip.id} v={v} onRequest={() => setRequesting(v.trip.id)} />
+              {published.flatMap((v) => (v.listing ? [toShipperListing({ ...v, listing: v.listing })] : [])).map((s) => (
+                <ShipperListingCard key={s.listingId} v={s} onRequest={() => setRequesting(s)} />
               ))}
             </div>
           )}
@@ -365,7 +366,8 @@ export function BackhaulMarketplaceView({ initialTab, initialQ }: { initialTab?:
       {reviewing && <ReviewRequestDialog requestId={reviewing} onClose={() => setReviewing(null)} />}
       {requesting && (
         <RequestSpaceDialog
-          tripId={requesting}
+          listing={requesting}
+          onSubmit={requestSpace}
           onClose={() => setRequesting(null)}
           onSubmitted={(id) => {
             setRequesting(null);

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { addDays, format, parseISO } from "date-fns";
 import { AlertTriangle, Ban, Truck } from "lucide-react";
 import type { Leg, LogisticsJob, Trip } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useTripMetrics } from "@/hooks/use-data";
 import { truckById, driverById } from "@/data/fleet";
@@ -165,12 +166,16 @@ export function AssignJobDialog({ job, open, onOpenChange }: { job: LogisticsJob
       date={job.pickupAt.slice(0, 10)}
       weightKg={job.weightKg}
       currentTripId={job.tripId}
-      onAssign={(tripId) => {
-        assign(job.id, tripId);
-        const t = trips.find((x) => x.id === tripId);
-        if (t) toast.success(`${job.id} assigned to ${truckById(t.truckId).code}`, { description: `${t.id} · stops and deliveries updated` });
-        else toast(`${job.id} moved back to unassigned`);
-      }}
+      onAssign={(tripId) =>
+        void act(
+          () => assign(job.id, tripId),
+          () => {
+            const t = trips.find((x) => x.id === tripId);
+            if (t) toast.success(`${job.id} assigned to ${truckById(t.truckId).code}`, { description: `${t.id} · stops and deliveries updated` });
+            else toast(`${job.id} moved back to unassigned`);
+          },
+        )
+      }
     />
   );
 }
@@ -179,6 +184,7 @@ export function CancelJobDialog({ job, open, onOpenChange }: { job: LogisticsJob
   const cancel = useAppStore((s) => s.cancelJob);
   const [reason, setReason] = React.useState("");
   const [error, setError] = React.useState<string>();
+  const [busy, setBusy] = React.useState(false);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -195,11 +201,13 @@ export function CancelJobDialog({ job, open, onOpenChange }: { job: LogisticsJob
           </Button>
           <Button
             variant="destructive"
-            onClick={() => {
+            disabled={busy}
+            onClick={async () => {
               if (reason.trim().length < 5) return setError("Give a short reason (at least 5 characters)");
-              cancel(job.id, reason.trim());
-              toast.success(`${job.id} cancelled`);
-              onOpenChange(false);
+              setBusy(true);
+              const done = await act(() => cancel(job.id, reason.trim()), () => toast.success(`${job.id} cancelled`));
+              setBusy(false);
+              if (done) onOpenChange(false);
             }}
           >
             <Ban /> Cancel job

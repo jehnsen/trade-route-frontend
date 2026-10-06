@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { addDays, format, parseISO } from "date-fns";
 import { AlertTriangle, CalendarClock, CheckCircle2, Clock, MoreHorizontal, Plus, Timer, Wrench, XCircle } from "lucide-react";
 import type { MaintenanceRecord, MaintenanceType } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { TODAY } from "@/data/company";
 import { TRUCKS, truckById } from "@/data/fleet";
@@ -26,7 +27,8 @@ import { StatusBadge } from "@/components/shared/status-badge";
 
 export const MAINTENANCE_TYPES: MaintenanceType[] = ["Preventive Maintenance", "Oil Change", "Tire Replacement", "Brake Service", "Engine Repair", "Electrical", "Aircon", "Body Repair", "Other"];
 const WINDOW_START = "2026-08-26";
-const soon = format(addDays(parseISO(TODAY), 14), "yyyy-MM-dd");
+/** Last day of the two-week planning window (follows the operations clock). */
+const soonDate = () => format(addDays(parseISO(TODAY), 14), "yyyy-MM-dd");
 
 const effectiveStatus = (m: MaintenanceRecord) => (m.status === "Scheduled" && m.date < TODAY ? "Overdue" : m.status);
 
@@ -49,7 +51,7 @@ export function MaintenanceView() {
   const alerts = [
     ...outlooks.flatMap(({ truck: t, o }) => (o.nextPms ? [{ tone: o.nextPms.kmLeft < 1000 ? "warning" : "info", text: o.nextPms.kmLeft >= 0 ? `${t.code} PMS due in ${num(o.nextPms.kmLeft)} km${o.nextPms.dueDate ? ` (or by ${fmtDateShort(o.nextPms.dueDate)})` : ""}.` : `${t.code} PMS overdue by ${num(-o.nextPms.kmLeft)} km.` }] : [])),
     ...overdue.map((m) => ({ tone: "danger", text: `${truckById(m.truckId).code} ${m.type.toLowerCase()} overdue — scheduled ${fmtDateShort(m.date)} at ${m.vendor.split(",")[0]}.` })),
-    ...upcoming.filter((m) => m.date <= soon).map((m) => ({ tone: "info", text: `${truckById(m.truckId).code} ${m.type.toLowerCase()} on ${fmtDateShort(m.date)} — truck unavailable for dispatch that day.` })),
+    ...upcoming.filter((m) => m.date <= soonDate()).map((m) => ({ tone: "info", text: `${truckById(m.truckId).code} ${m.type.toLowerCase()} on ${fmtDateShort(m.date)} — truck unavailable for dispatch that day.` })),
   ];
 
   const list = (tab === "upcoming" ? upcoming : tab === "overdue" ? overdue : tab === "history" ? history : records).filter((m) => truck === "all" || m.truckId === truck);
@@ -79,14 +81,14 @@ export function MaintenanceView() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {m.status === "Scheduled" && (
-                <DropdownMenuItem onSelect={() => (setStatus(m.id, "In Progress"), toast(`${truckById(m.truckId).code} checked in at ${m.vendor.split(",")[0]}`))}>
+                <DropdownMenuItem onSelect={() => void act(() => setStatus(m.id, "In Progress"), () => toast(`${truckById(m.truckId).code} checked in at ${m.vendor.split(",")[0]}`))}>
                   <Wrench /> Start (truck in shop)
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onSelect={() => setCompleting(m)}>
                 <CheckCircle2 /> Mark completed
               </DropdownMenuItem>
-              <DropdownMenuItem variant="destructive" onSelect={() => (setStatus(m.id, "Cancelled"), toast(`${m.id} cancelled`))}>
+              <DropdownMenuItem variant="destructive" onSelect={() => void act(() => setStatus(m.id, "Cancelled"), () => toast(`${m.id} cancelled`))}>
                 <XCircle /> Cancel
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -109,7 +111,7 @@ export function MaintenanceView() {
       />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KPICard label="Overdue services" value={overdue.length} icon={AlertTriangle} tone={overdue.length ? "danger" : "success"} hint={overdue.map((m) => `${truckById(m.truckId).code}: ${m.type}`).join(" · ") || "Nothing overdue"} />
-        <KPICard label="Upcoming (14 days)" value={upcoming.filter((m) => m.date <= soon).length} icon={CalendarClock} hint="scheduled workshop visits" />
+        <KPICard label="Upcoming (14 days)" value={upcoming.filter((m) => m.date <= soonDate()).length} icon={CalendarClock} hint="scheduled workshop visits" />
         <KPICard label="Maintenance cost (30 days)" value={pesoCompact(sumBy(windowDone, (m) => m.cost))} icon={Wrench} hint={`${windowDone.length} completed jobs`} />
         <KPICard label="Downtime (30 days)" value={`${sumBy(windowDone, (m) => m.downtimeHours ?? 0)} h`} icon={Timer} hint="truck unavailable for trips" />
       </div>
@@ -199,12 +201,16 @@ function ScheduleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const { control, register, handleSubmit, formState, watch, reset } = form;
   const v = watch();
   const clash = trips.find((t) => t.truckId === v.truckId && t.date === v.date && t.status !== "Cancelled");
-  const submit = handleSubmit((vals) => {
+  const submit = handleSubmit(async (vals) => {
     const odo = currentOdometer(truckById(vals.truckId), trips, fuelLogs);
-    const id = add({ truckId: vals.truckId, type: vals.type, date: vals.date, vendor: vals.vendor, cost: vals.cost, notes: vals.notes, odometerKm: odo, status: "Scheduled" });
-    toast.success(`${id} scheduled`, { description: `${truckById(vals.truckId).code} will show as under maintenance on ${fmtDate(vals.date)}.` });
-    reset();
-    onOpenChange(false);
+    await act(
+      () => add({ truckId: vals.truckId, type: vals.type, date: vals.date, vendor: vals.vendor, cost: vals.cost, notes: vals.notes, odometerKm: odo, status: "Scheduled" }),
+      (id) => {
+        toast.success(`${id} scheduled`, { description: `${truckById(vals.truckId).code} will show as under maintenance on ${fmtDate(vals.date)}.` });
+        reset();
+        onOpenChange(false);
+      },
+    );
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -249,7 +255,7 @@ function ScheduleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
           )}
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit"><CalendarClock /> Schedule</Button>
+            <Button type="submit" disabled={formState.isSubmitting}><CalendarClock /> Schedule</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -281,11 +287,15 @@ function CompleteDialog({ record, onClose }: { record: MaintenanceRecord; onClos
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            onClick={() => {
-              setStatus(record.id, "Completed", { cost: Number(cost) || record.cost, odometerKm: Number(odo) || record.odometerKm, date: record.date > TODAY ? TODAY : record.date });
-              toast.success(`${record.id} completed`, { description: `${peso(Number(cost) || record.cost)} added to ${truckById(record.truckId).code}'s maintenance cost.` });
-              onClose();
-            }}
+            onClick={() =>
+              void act(
+                () => setStatus(record.id, "Completed", { cost: Number(cost) || record.cost, odometerKm: Math.round(Number(odo)) || record.odometerKm, date: record.date > TODAY ? TODAY : record.date }),
+                () => {
+                  toast.success(`${record.id} completed`, { description: `${peso(Number(cost) || record.cost)} added to ${truckById(record.truckId).code}'s maintenance cost.` });
+                  onClose();
+                },
+              )
+            }
           >
             <CheckCircle2 /> Mark completed
           </Button>

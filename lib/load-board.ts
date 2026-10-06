@@ -28,13 +28,13 @@ import type {
   TruckType,
   TruckingPartner,
 } from "@/types";
-import { NOW, STAFF } from "@/data/company";
+import { COMPANY, NOW, STAFF } from "@/data/company";
 import { areaById, areaName, LUCENA_WAREHOUSE, routeById } from "@/data/areas";
 import { truckById } from "@/data/fleet";
 import { suggestFreight } from "@/data/cargo";
 import { canAddReturnCargo, isTripEditable, travelMinutes, truckLocation, type TripMetrics } from "./logistics";
 import { fmtDay, fmtTime, kg, peso, relativeDay } from "./format";
-import { memoizeLast } from "./utils";
+import { memoizeLast } from "./collections";
 
 const fmt = (d: Date) => format(d, "yyyy-MM-dd'T'HH:mm");
 const plus = (dt: string, minutes: number) => fmt(addMinutes(parseISO(dt), minutes));
@@ -52,8 +52,10 @@ export const OPEN_CAPACITY: CapacityStatus[] = ["Open", "Partially Filled"];
 const isTruckType = (v: string): v is TruckType => (TRUCK_TYPES as string[]).includes(v);
 
 /** Our dispatch desk — the contact shared when we repost our own or a customer's cargo. */
-const dispatcher = STAFF.find((s) => s.role === "dispatcher")!;
-export const DISPATCH_CONTACT: BoardContact = { name: dispatcher.name, phone: dispatcher.phone };
+export function dispatchContact(): BoardContact {
+  const dispatcher = STAFF.find((s) => s.role === "dispatcher");
+  return dispatcher ? { name: dispatcher.name, phone: dispatcher.phone } : { name: COMPANY.shortName, phone: COMPANY.mobile };
+}
 
 /** City-level place for posts that only name the town, e.g. "Valenzuela". */
 export const cityPlace = (areaId: AreaId): Place => ({ name: areaName(areaId), areaId });
@@ -410,7 +412,7 @@ function whenLabel(dt: string) {
 }
 
 /** Contact to put in a repost: our desk for our own or a customer's cargo, else the original poster. */
-export const shareContactFor = (load: Pick<AvailableLoad, "source" | "contact">) => (load.source === "Internal" || load.source === "Existing Customer" ? DISPATCH_CONTACT : load.contact);
+export const shareContactFor = (load: Pick<AvailableLoad, "source" | "contact">) => (load.source === "Internal" || load.source === "Existing Customer" ? dispatchContact() : load.contact);
 
 export function loadShareMessage(load: AvailableLoad) {
   const contact = shareContactFor(load);

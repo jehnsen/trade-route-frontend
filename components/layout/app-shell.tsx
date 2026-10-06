@@ -12,6 +12,7 @@ import {
   ChevronsRight,
   FlaskConical,
   Lock,
+  LogOut,
   Menu,
   RotateCcw,
   Search,
@@ -30,7 +31,9 @@ import {
   canAccess,
   type NavBadgeKey,
 } from "@/lib/nav";
-import { useAppStore, actorFor } from "@/lib/store";
+import { useAppStore } from "@/lib/store";
+import { useSession } from "@/lib/session";
+import { act } from "@/lib/act";
 import { useInvoices } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
 import { documentStatus, unassignedJobs } from "@/lib/logistics";
@@ -43,6 +46,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Popover,
   PopoverContent,
@@ -53,6 +57,7 @@ import {
   Tip,
 } from "@/components/ui/overlays";
 import { EmptyState } from "@/components/shared/common";
+import { PageSkeleton } from "@/components/shared/states";
 import { Logo } from "./brand";
 import { GlobalSearch } from "./global-search";
 import { NotificationsBell } from "./notifications-bell";
@@ -487,17 +492,22 @@ function SidebarBody({
   );
 }
 
+const PREVIEW_ROLES: Role[] = ["owner", "sales", "dispatcher", "procurement", "warehouse", "accounting", "driver", "customer"];
+
+/** Signed-in user and organization. Owners can preview the app as the other desks. */
 export function RoleSwitcher({ compact }: { compact?: boolean }) {
   const role = useAppStore((s) => s.role);
+  const viewer = useAppStore((s) => s.viewer);
   const setRole = useAppStore((s) => s.setRole);
   const router = useRouter();
   const pathname = usePathname();
   const meta = ROLE_META[role];
+  const previewing = !!viewer && role !== viewer.role;
   const choose = (r: Role) => {
     setRole(r);
     const m = ROLE_META[r];
-    toast.success(`Switched to ${m.label} view`, {
-      description: m.description,
+    toast.success(r === viewer?.role ? "Back to your own view" : `Previewing the ${m.label} view`, {
+      description: r === viewer?.role ? undefined : "Actions still run with your own permissions.",
     });
     if (r === "driver" || r === "customer") router.push(m.home);
     else if (
@@ -508,7 +518,12 @@ export function RoleSwitcher({ compact }: { compact?: boolean }) {
     )
       router.push(m.home);
   };
-  const initials = actorFor(role)
+  const signOut = async () => {
+    await useSession.getState().logout();
+    router.replace("/login");
+  };
+  const name = viewer?.name ?? "";
+  const initials = name
     .split(" ")
     .map((w) => w[0])
     .slice(0, 2)
@@ -519,7 +534,7 @@ export function RoleSwitcher({ compact }: { compact?: boolean }) {
         <button
           type="button"
           className="flex min-h-10 items-center gap-2.5 rounded-lg px-1.5 py-1 text-left hover:bg-accent cursor-pointer"
-          aria-label="Switch demo role"
+          aria-label="Account menu"
         >
           <Avatar className="size-8 border border-primary/15">
             <AvatarFallback className="bg-accent text-[11px] font-semibold text-primary">
@@ -528,11 +543,9 @@ export function RoleSwitcher({ compact }: { compact?: boolean }) {
           </Avatar>
           {!compact && (
             <span className="hidden pr-1 leading-tight md:block">
-              <span className="block text-[13px] font-medium">
-                {actorFor(role).replace(" (portal)", "")}
-              </span>
+              <span className="block text-[13px] font-medium">{name}</span>
               <span className="block text-[11px] text-muted-foreground">
-                {meta.label} view
+                {previewing ? `Previewing ${meta.label}` : meta.label}
               </span>
             </span>
           )}
@@ -540,44 +553,53 @@ export function RoleSwitcher({ compact }: { compact?: boolean }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuLabel>Demo account — switch role</DropdownMenuLabel>
-        {(
-          [
-            "owner",
-            "sales",
-            "dispatcher",
-            "procurement",
-            "warehouse",
-            "accounting",
-            "driver",
-            "customer",
-          ] as Role[]
-        ).map((r) => {
-          const m = ROLE_META[r];
-          return (
-            <DropdownMenuItem
-              key={r}
-              onSelect={() => choose(r)}
-              className={cn(r === role && "bg-accent")}
-            >
-              <m.icon />
-              <div className="min-w-0 flex-1">
-                <div className="font-medium">{m.label}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {m.description}
-                </div>
-              </div>
-              {r === role && <Badge variant="teal">Active</Badge>}
-            </DropdownMenuItem>
-          );
-        })}
+        <DropdownMenuLabel>
+          <div className="font-medium">{name}</div>
+          <div className="truncate text-xs font-normal text-muted-foreground">
+            {viewer ? `${ROLE_META[viewer.role].label} · ${viewer.organization.name}` : ""}
+          </div>
+        </DropdownMenuLabel>
+        {viewer?.canViewAs && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              Preview as
+            </DropdownMenuLabel>
+            {PREVIEW_ROLES.map((r) => {
+              const m = ROLE_META[r];
+              return (
+                <DropdownMenuItem
+                  key={r}
+                  onSelect={() => choose(r)}
+                  className={cn(r === role && "bg-accent")}
+                >
+                  <m.icon />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{m.label}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {m.description}
+                    </div>
+                  </div>
+                  {r === role && <Badge variant="teal">Active</Badge>}
+                </DropdownMenuItem>
+              );
+            })}
+          </>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => void signOut()}>
+          <LogOut /> Sign out
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 export function DemoBadge() {
+  const viewer = useAppStore((s) => s.viewer);
   const reset = useAppStore((s) => s.resetDemo);
+  const [resetting, setResetting] = React.useState(false);
+  if (!viewer?.organization.demo) return null;
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -590,26 +612,32 @@ export function DemoBadge() {
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 text-sm">
-        <div className="font-semibold">You are viewing demo data</div>
+        <div className="font-semibold">You are working in a demo organization</div>
         <p className="mt-1 text-muted-foreground">
           All customers, freight rates, trips and balances are fictional and
-          generated for Lucena Fresh Trading & Logistics. The demo clock is
-          fixed at <b>Fri, Sep 25, 2026 · 7:48 AM</b>. Changes you make are
-          saved in this browser only.
+          generated for {viewer.organization.name}. The operations clock starts
+          at <b>Fri, Sep 25, 2026 · 7:48 AM</b>. Changes are saved on the server
+          and everyone signed in to this organization sees them.
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3 w-full"
-          onClick={() => {
-            reset();
-            toast.success("Demo data reset", {
-              description: "Everything is back to the 7:48 AM snapshot.",
-            });
-          }}
-        >
-          <RotateCcw /> Reset demo data
-        </Button>
+        {viewer.canViewAs && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 w-full"
+            disabled={resetting}
+            onClick={async () => {
+              setResetting(true);
+              await act(reset, () =>
+                toast.success("Demo data reset", {
+                  description: "Everyone is back to the 7:48 AM snapshot.",
+                }),
+              );
+              setResetting(false);
+            }}
+          >
+            <RotateCcw /> {resetting ? "Resetting…" : "Reset demo data"}
+          </Button>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -617,19 +645,34 @@ export function DemoBadge() {
 
 function RoleGate({ children }: { children: React.ReactNode }) {
   const role = useAppStore((s) => s.role);
+  const viewer = useAppStore((s) => s.viewer);
+  const ready = useAppStore((s) => s.status === "ready");
   const setRole = useAppStore((s) => s.setRole);
   const pathname = usePathname();
+  // Screens assume the organization's records and fleet are loaded.
+  if (!ready || !viewer) return <PageSkeleton />;
   if (role === "driver" || role === "customer" || !canAccess(role, pathname)) {
+    const previewing = viewer.canViewAs && role !== viewer.role;
     return (
       <EmptyState
         icon={Lock}
         className="mx-auto mt-10 max-w-lg bg-card"
         title={`Not available in the ${ROLE_META[role].label} view`}
-        description="In the live system this page would be hidden for this role. Switch to the Owner view to explore everything."
+        description={
+          previewing
+            ? "This page is hidden for that desk. Go back to your own view to explore everything."
+            : "Your role doesn't include this page. Ask the owner if you need access."
+        }
         action={
-          <Button onClick={() => setRole("owner")}>
-            <Sparkles /> Switch to Owner
-          </Button>
+          previewing ? (
+            <Button onClick={() => setRole(viewer.role)}>
+              <Sparkles /> Back to {ROLE_META[viewer.role].label} view
+            </Button>
+          ) : (
+            <Button asChild>
+              <Link href={ROLE_META[role].home}>Go to {ROLE_META[role].label} home</Link>
+            </Button>
+          )
         }
       />
     );

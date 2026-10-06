@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Anchor, CheckCircle2, ClipboardCheck, ClipboardList, FileText, Pencil, Phone, Ship, Truck, UserRound, Wallet, XCircle, Warehouse } from "lucide-react";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useSalesInvoiceMap, useStock } from "@/hooks/use-data";
 import { productById, productLabel } from "@/data/products";
@@ -102,10 +103,7 @@ export function OrderDetail({ id }: { id: string }) {
             {(order.status === "Pending Confirmation" || order.status === "Draft") && (
               <Button
                 size="sm"
-                onClick={() => {
-                  setStatus(order.id, "Confirmed");
-                  toast.success(`${order.id} confirmed`, { description: "Stock reserved." });
-                }}
+                onClick={() => void act(() => setStatus(order.id, "Confirmed"), () => toast.success(`${order.id} confirmed`, { description: "Stock reserved." }))}
               >
                 <CheckCircle2 /> Confirm
               </Button>

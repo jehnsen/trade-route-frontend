@@ -1,7 +1,6 @@
-import { LOGISTICS_SEED } from "./logistics-seed";
-import { SEED } from "./seed";
+// Tenant registries filled by `applyTenantProfile` (data/tenant.ts).
 
-/** Freight revenue recorded in the paper ledger before TradeLoop go-live (Aug 26, 2026), per customer. */
-export const LIFETIME_BASELINE = LOGISTICS_SEED.lifetimeBaseline;
+/** Freight revenue recorded in the paper ledger before TradeLoop go-live, per customer. */
+export const LIFETIME_BASELINE: Record<string, number> = {};
 /** Trading module: product sales before go-live, per customer. */
-export const SALES_LIFETIME_BASELINE = SEED.lifetimeBaseline;
+export const SALES_LIFETIME_BASELINE: Record<string, number> = {};

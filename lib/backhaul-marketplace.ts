@@ -7,14 +7,14 @@
  * charge. Fit checks are a fixed set of explainable rules, like the Load Board's matching.
  */
 import { differenceInMinutes, parseISO } from "date-fns";
-import type { AreaId, BackhaulBookingRequest, BackhaulListing, BackhaulListingStatus, BackhaulRequestStatus, CargoCategory, LogisticsJob, Trip } from "@/types";
+import type { AreaId, BackhaulBookingRequest, BackhaulListing, BackhaulListingStatus, BackhaulRequestStatus, CargoCategory, LogisticsJob, ShipperListing, ShipperRequestView, Trip } from "@/types";
 import { TODAY, TOMORROW } from "@/data/company";
 import { truckById } from "@/data/fleet";
 import { BACKHAUL_MINIMUM_FREIGHT, BACKHAUL_RATE_PER_KG } from "@/data/cargo";
 import { jobTotal, type TripMetrics } from "./logistics";
 import { etaAt, isQuezon, legOpen, shortArea, tripLeg, type MatchCheck, type MatchLabel } from "./load-board";
 import { fmtTime, fmtTimeWindow, kg, relativeDay } from "./format";
-import { memoizeLast, sumBy } from "./utils";
+import { memoizeLast, sumBy } from "./collections";
 
 export const REQUEST_STATUSES: BackhaulRequestStatus[] = ["Requested", "Confirmed", "Declined", "Cancelled", "Expired"];
 
@@ -116,9 +116,67 @@ export const getListingViews = memoizeLast((trips: Trip[], listings: BackhaulLis
 });
 
 /** "Valenzuela → Caloocan → QC → Sariaya → Lucena" */
-export const legRouteLine = (v: Pick<ListingView, "leg">) => v.leg.routeAreas.map(shortArea).join(" → ");
+export const legRouteLine = (v: { leg: { routeAreas: AreaId[] } }) => v.leg.routeAreas.map(shortArea).join(" → ");
+
+// ─── What shippers see ──────────────────────────────────────────────────────
+/** Truck times leave the company only as the start of a two-hour window. */
+const hourStart = (dt: string) => `${dt.slice(0, 13)}:00`;
+
+/** A listed leg as outside shippers see it. The only listing data the public page ever receives. */
+export function toShipperListing(v: ListingView & { listing: BackhaulListing }): ShipperListing {
+  const truck = truckById(v.trip.truckId);
+  return {
+    listingId: v.listing.id,
+    date: v.trip.date,
+    vehicleType: truck.vehicleType,
+    body: truck.body,
+    truckLabel: "our truck",
+    leg: {
+      origin: v.leg.origin,
+      destination: v.leg.destination,
+      routeAreas: v.leg.routeAreas,
+      areaEta: Object.fromEntries(v.pickupAreas.map((a) => [a, hourStart(etaAt(v.leg, a))])),
+      departureAt: hourStart(v.leg.departureAt),
+      arrivalAt: hourStart(v.leg.arrivalAt),
+    },
+    pickupAreas: v.pickupAreas,
+    openKg: v.openKg,
+    accepting: v.accepting,
+    listing: { ratePerKg: v.listing.ratePerKg, minimumCharge: v.listing.minimumCharge, acceptedCargo: v.listing.acceptedCargo, restrictions: v.listing.restrictions },
+  };
+}
+
+/** A shipper's own request: status, cargo, pickup window and booking reference. Nothing about the truck. */
+export function shipperRequestView(r: BackhaulBookingRequest, job: LogisticsJob | undefined, leg: ListingView | undefined): ShipperRequestView {
+  const status = requestStatus(r, job, leg?.status);
+  return {
+    id: r.id,
+    status,
+    declineReason: status === "Declined" ? r.declineReason : undefined,
+    cargoDescription: r.cargoDescription,
+    quantity: r.quantity,
+    unit: r.unit,
+    weightKg: r.weightKg,
+    pickup: r.pickup,
+    dropoff: r.dropoff,
+    quotedFreight: r.quotedFreight,
+    tripDate: leg?.trip.date,
+    pickupWindowAt: leg ? hourStart(etaAt(leg.leg, r.pickup.areaId)) : undefined,
+    bookingRef: status === "Confirmed" ? job?.id : undefined,
+    bookingStatus: status === "Confirmed" ? job?.status : undefined,
+  };
+}
 
 // ─── Fit checks ─────────────────────────────────────────────────────────────
+/** What the fit checks read from a leg: a dispatcher's ListingView or a shipper's ShipperListing. */
+export interface FitView {
+  pickupAreas: AreaId[];
+  truckLabel: string;
+  openKg: number;
+  leg: Pick<ListingView["leg"], "origin" | "destination" | "routeAreas" | "areaEta" | "departureAt">;
+  listing?: Pick<BackhaulListing, "acceptedCargo">;
+}
+
 export type RequestDraft = Pick<BackhaulBookingRequest, "pickup" | "dropoff" | "weightKg" | "cargoCategory" | "readyAt">;
 
 const when = (dt: string) => `${relativeDay(dt.slice(0, 10))} ${fmtTime(dt)}`;
@@ -126,27 +184,27 @@ const when = (dt: string) => `${relativeDay(dt.slice(0, 10))} ${fmtTime(dt)}`;
 /** When the truck passes an area. Shippers outside the company only see a two-hour window. */
 const passTime = (dt: string, shipper: boolean) => (shipper ? fmtTimeWindow(dt) : `~${fmtTime(dt)}`);
 
-function pickupCheck(r: RequestDraft, v: ListingView): MatchCheck {
+function pickupCheck(r: RequestDraft, v: FitView): MatchCheck {
   const area = r.pickup.areaId;
   if (v.pickupAreas.includes(area)) return { rule: "pickup", result: "ok", text: `Pickup in ${shortArea(area)} is on the return route` };
   return { rule: "pickup", result: "fail", text: `${shortArea(area)} is not on this return route (${v.pickupAreas.map(shortArea).join(", ")})` };
 }
 
-function destinationCheck(r: RequestDraft, v: ListingView): MatchCheck {
+function destinationCheck(r: RequestDraft, v: FitView): MatchCheck {
   const area = r.dropoff.areaId;
   if (!isQuezon(area)) return { rule: "destination", result: "fail", text: `Drop-off must be in Quezon — ${v.truckLabel} is heading home to Lucena` };
   if (v.leg.routeAreas.includes(area)) return { rule: "destination", result: "ok", text: `Drop-off in ${shortArea(area)} is on the way to Lucena` };
   return { rule: "destination", result: "ok", text: `${shortArea(area)} is a short side trip near Lucena` };
 }
 
-function capacityCheck(r: RequestDraft, v: ListingView): MatchCheck {
+function capacityCheck(r: RequestDraft, v: FitView): MatchCheck {
   const after = v.openKg - r.weightKg;
   if (after >= 0) return { rule: "capacity", result: "ok", text: `Fits — ${kg(v.openKg)} open, ${kg(after)} left after` };
   return { rule: "capacity", result: "fail", text: `Needs ${kg(r.weightKg)}, only ${kg(v.openKg)} open` };
 }
 
 /** Cargo ready before the truck passes is fine; up to an hour late means the truck waits. */
-function timingCheck(r: RequestDraft, v: ListingView, shipper: boolean): MatchCheck {
+function timingCheck(r: RequestDraft, v: FitView, shipper: boolean): MatchCheck {
   const area = r.pickup.areaId;
   const passAt = etaAt(v.leg, area);
   const late = differenceInMinutes(parseISO(r.readyAt), parseISO(passAt));
@@ -156,7 +214,7 @@ function timingCheck(r: RequestDraft, v: ListingView, shipper: boolean): MatchCh
   return { rule: "timing", result: "fail", text: `Cargo ready ${when(r.readyAt)} — truck passes ${shortArea(area)} ${relativeDay(passAt.slice(0, 10))} ${pass}` };
 }
 
-function cargoCheck(category: CargoCategory, listing: BackhaulListing | undefined): MatchCheck {
+function cargoCheck(category: CargoCategory, listing: FitView["listing"]): MatchCheck {
   const accepted = listing?.acceptedCargo ?? [];
   if (accepted.length === 0) return { rule: "cargo", result: "ok", text: "No cargo category restrictions" };
   if (accepted.includes(category)) return { rule: "cargo", result: "ok", text: `Accepts ${category.toLowerCase()}` };
@@ -167,7 +225,7 @@ function cargoCheck(category: CargoCategory, listing: BackhaulListing | undefine
  * Rule-by-rule fit of a request (or a shipper's draft) on a listed leg. Space is only checked
  * for requests that are not on the trip yet. `shipper` phrases truck times as windows.
  */
-export function checkRequest(r: RequestDraft, v: ListingView, { onTrip = false, shipper = false } = {}): { checks: MatchCheck[]; label: MatchLabel } {
+export function checkRequest(r: RequestDraft, v: FitView, { onTrip = false, shipper = false } = {}): { checks: MatchCheck[]; label: MatchLabel } {
   const checks = [pickupCheck(r, v), destinationCheck(r, v), ...(onTrip ? [] : [capacityCheck(r, v), timingCheck(r, v, shipper)]), cargoCheck(r.cargoCategory, v.listing)];
   const label: MatchLabel = checks.some((c) => c.result === "fail") ? "Poor Fit" : checks.some((c) => c.result === "partial") ? "Possible Match" : "Strong Match";
   return { checks, label };

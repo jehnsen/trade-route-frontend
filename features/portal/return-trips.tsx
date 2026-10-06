@@ -5,11 +5,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ArrowDown, Banknote, CheckCircle2, PackageX, Phone, Search, ShieldCheck, Truck } from "lucide-react";
-import type { BackhaulRequestStatus } from "@/types";
-import { useAppStore, useHydrated } from "@/lib/store";
-import { useListingViews } from "@/hooks/use-data";
-import { findShipperRequest, OUR_VAN_RESTRICTIONS, requestStatus } from "@/lib/backhaul-marketplace";
-import { DISPATCH_CONTACT, etaAt, placeLabel } from "@/lib/load-board";
+import type { BackhaulRequestStatus, PublicBackhaulBoard, ShipperListing, ShipperRequestInput, ShipperRequestView } from "@/types";
+import { useAppStore, PUBLIC_ORG } from "@/lib/store";
+import { api, ApiError, errorMessage } from "@/lib/api/client";
+import { applyTenantProfile } from "@/data/tenant";
+import { OUR_VAN_RESTRICTIONS } from "@/lib/backhaul-marketplace";
+import { dispatchContact, placeLabel } from "@/lib/load-board";
 import { fmtDay, fmtTimeWindow, kg, peso, relativeDay } from "@/lib/format";
 import { groupBy } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -40,16 +41,42 @@ const lookupSchema = z.object({
 });
 type LookupValues = z.infer<typeof lookupSchema>;
 
-const callHref = `tel:${DISPATCH_CONTACT.phone.replace(/\s/g, "")}`;
+const base = `/public/ops/${encodeURIComponent(PUBLIC_ORG)}/return-trips`;
+const callHref = () => `tel:${dispatchContact().phone.replace(/\s/g, "")}`;
+const lookupRequest = (id: string, phone: string) => api<ShipperRequestView>(`${base}/requests/${encodeURIComponent(id.trim().toUpperCase())}?phone=${encodeURIComponent(phone)}`, { auth: false });
+
+/** Open return legs from the public API (shipper view: no trip ids, plates, drivers or exact times). */
+function usePublicBoard() {
+  const [board, setBoard] = React.useState<PublicBackhaulBoard | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const load = React.useCallback(async () => {
+    try {
+      const b = await api<PublicBackhaulBoard>(base, { auth: false });
+      // Signed-in staff already have the full profile; anonymous visitors get the public one.
+      if (!useAppStore.getState().viewer) applyTenantProfile(b.profile);
+      setBoard(b);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, []);
+  React.useEffect(() => void load(), [load]);
+  return { board, error, reload: load };
+}
 
 export function PortalReturnTrips({ initialRequest }: { initialRequest?: string }) {
-  const hydrated = useHydrated((s) => s.hydrated);
-  const views = useListingViews();
-  const [requesting, setRequesting] = React.useState<string | null>(null);
-  const [sent, setSent] = React.useState<string | null>(null);
+  const { board, error, reload } = usePublicBoard();
+  const [requesting, setRequesting] = React.useState<ShipperListing | null>(null);
+  const [sent, setSent] = React.useState<ShipperRequestView | null>(null);
 
-  const open = [...views.values()].filter((v) => v.accepting);
-  const byDate = Object.entries(groupBy(open, (v) => v.trip.date)).sort(([a], [b]) => a.localeCompare(b));
+  const byDate = Object.entries(groupBy(board?.listings ?? [], (v) => v.date)).sort(([a], [b]) => a.localeCompare(b));
+  const submitRequest = async (input: ShipperRequestInput) => {
+    const { id } = await api<{ id: string }>(`${base}/requests`, { method: "POST", body: input, auth: false });
+    // Show the shipper exactly what a later status check will show.
+    setSent(await lookupRequest(id, input.shipper.phone).catch(() => null));
+    void reload();
+    return id;
+  };
 
   return (
     <>
@@ -98,11 +125,23 @@ export function PortalReturnTrips({ initialRequest }: { initialRequest?: string 
 
         {sent && (
           <div className="mt-5">
-            <RequestStatus requestId={sent} justSent onClose={() => setSent(null)} />
+            <RequestStatus view={sent} justSent onClose={() => setSent(null)} />
           </div>
         )}
 
-        {!hydrated ? (
+        {error ? (
+          <EmptyState
+            icon={Truck}
+            title="Return trips couldn't load right now."
+            description={error}
+            action={
+              <Button variant="outline" onClick={() => void reload()}>
+                Try again
+              </Button>
+            }
+            className="mt-6 bg-card"
+          />
+        ) : !board ? (
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Skeleton className="h-80" />
             <Skeleton className="h-80" />
@@ -114,8 +153,8 @@ export function PortalReturnTrips({ initialRequest }: { initialRequest?: string 
             description="We list new return trips every evening. You can also call our dispatch desk to ask about tomorrow."
             action={
               <Button asChild variant="outline">
-                <a href={callHref}>
-                  <Phone /> {DISPATCH_CONTACT.phone}
+                <a href={callHref()}>
+                  <Phone /> {dispatchContact().phone}
                 </a>
               </Button>
             }
@@ -129,7 +168,7 @@ export function PortalReturnTrips({ initialRequest }: { initialRequest?: string 
               </h3>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {list.map((v) => (
-                  <ShipperListingCard key={v.trip.id} v={v} onRequest={() => setRequesting(v.trip.id)} />
+                  <ShipperListingCard key={v.listingId} v={v} onRequest={() => setRequesting(v)} />
                 ))}
               </div>
             </section>
@@ -157,8 +196,8 @@ export function PortalReturnTrips({ initialRequest }: { initialRequest?: string 
               Check a request
             </h2>
             <p className="mt-1 max-w-md text-sm text-muted-foreground">Enter your request number and the mobile number you used. You&apos;ll see whether dispatch has confirmed it.</p>
-            <a href={callHref} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold hover:underline">
-              <Phone className="size-4" /> Dispatch desk · {DISPATCH_CONTACT.phone}
+            <a href={callHref()} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold hover:underline">
+              <Phone className="size-4" /> Dispatch desk · {dispatchContact().phone}
             </a>
           </div>
           <RequestLookup initialRequest={initialRequest} />
@@ -167,11 +206,11 @@ export function PortalReturnTrips({ initialRequest }: { initialRequest?: string 
 
       {requesting && (
         <RequestSpaceDialog
-          tripId={requesting}
+          listing={requesting}
+          onSubmit={submitRequest}
           onClose={() => setRequesting(null)}
-          onSubmitted={(id) => {
+          onSubmitted={() => {
             setRequesting(null);
-            setSent(id);
             document.getElementById("trips")?.scrollIntoView({ behavior: "smooth" });
           }}
         />
@@ -193,11 +232,19 @@ function InfoTile({ icon: Icon, title, children }: { icon: typeof Truck; title: 
 }
 
 function RequestLookup({ initialRequest }: { initialRequest?: string }) {
-  const requests = useAppStore((s) => s.backhaulRequests);
-  const [result, setResult] = React.useState<string | "none" | null>(null);
+  const [result, setResult] = React.useState<ShipperRequestView | "none" | null>(null);
+  const [failure, setFailure] = React.useState<string | null>(null);
   const form = useForm<LookupValues>({ resolver: zodResolver(lookupSchema), defaultValues: { requestId: initialRequest ?? "", phone: "" } });
   const errors = form.formState.errors;
-  const submit = form.handleSubmit((x) => setResult(findShipperRequest(requests, x.requestId, x.phone)?.id ?? "none"));
+  const submit = form.handleSubmit(async (x) => {
+    setFailure(null);
+    try {
+      setResult(await lookupRequest(x.requestId, x.phone));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) setResult("none");
+      else (setResult(null), setFailure(errorMessage(e)));
+    }
+  });
 
   return (
     <div className="grid gap-4">
@@ -219,19 +266,19 @@ function RequestLookup({ initialRequest }: { initialRequest?: string }) {
           No request matches that number and mobile number. Check both, or call our dispatch desk.
         </p>
       )}
-      {result && result !== "none" && <RequestStatus requestId={result} />}
+      {failure && (
+        <p role="alert" className="rounded-lg border border-dashed px-4 py-3 text-sm text-destructive">
+          {failure}
+        </p>
+      )}
+      {result && result !== "none" && <RequestStatus view={result} />}
     </div>
   );
 }
 
 /** A shipper's own request: status, route, pickup window and quote. Nothing about the truck or other cargo. */
-function RequestStatus({ requestId, justSent, onClose }: { requestId: string; justSent?: boolean; onClose?: () => void }) {
-  const r = useAppStore((s) => s.backhaulRequests.find((x) => x.id === requestId));
-  const job = useAppStore((s) => (r?.jobId ? s.jobs.find((j) => j.id === r.jobId) : undefined));
-  const views = useListingViews();
-  if (!r) return null;
-  const leg = [...views.values()].find((v) => v.listing?.id === r.listingId);
-  const status = requestStatus(r, job, leg?.status);
+function RequestStatus({ view: r, justSent, onClose }: { view: ShipperRequestView; justSent?: boolean; onClose?: () => void }) {
+  const status = r.status;
 
   return (
     <Card role="status" className="gap-4 p-5">
@@ -250,11 +297,11 @@ function RequestStatus({ requestId, justSent, onClose }: { requestId: string; ju
         {status === "Declined" && r.declineReason && <span className="text-muted-foreground"> {r.declineReason}</span>}
       </p>
       <dl className="grid gap-3 border-t pt-4 text-sm sm:grid-cols-2">
-        {leg && (
+        {r.tripDate && r.pickupWindowAt && (
           <div>
             <dt className="text-xs text-muted-foreground">Return trip</dt>
             <dd className="mt-0.5 font-medium">
-              {fmtDay(leg.trip.date)} · pickup {fmtTimeWindow(etaAt(leg.leg, r.pickup.areaId))}
+              {fmtDay(r.tripDate)} · pickup {fmtTimeWindow(r.pickupWindowAt)}
             </dd>
           </div>
         )}
@@ -276,12 +323,12 @@ function RequestStatus({ requestId, justSent, onClose }: { requestId: string; ju
           <dt className="text-xs text-muted-foreground">Instant quote</dt>
           <dd className="mt-0.5 font-semibold tabular">{peso(r.quotedFreight)}</dd>
         </div>
-        {job && status === "Confirmed" && (
+        {r.bookingRef && (
           <div>
             <dt className="text-xs text-muted-foreground">Booking reference</dt>
             <dd className="mt-0.5 flex flex-wrap items-center gap-2">
-              <span className="font-mono">{job.id}</span>
-              <StatusBadge status={job.status} className="text-[11px]" />
+              <span className="font-mono">{r.bookingRef}</span>
+              {r.bookingStatus && <StatusBadge status={r.bookingStatus} className="text-[11px]" />}
             </dd>
           </div>
         )}

@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowUpRight, Ban, CheckCircle2, CircleDollarSign, ClipboardList, FileText, History, Info, MapPin, MoreHorizontal, Package, Phone, Route, Truck, UserRound, Wallet } from "lucide-react";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useInvoiceMap, useTripMetrics } from "@/hooks/use-data";
 import { staffById } from "@/data/company";
@@ -84,10 +85,7 @@ export function JobDetail({ id }: { id: string }) {
             {(job.status === "Inquiry" || job.status === "Quoted") && (
               <Button
                 size="sm"
-                onClick={() => {
-                  setStatus(job.id, "Confirmed");
-                  toast.success(`${job.id} confirmed`, { description: "It now appears on the Dispatch board." });
-                }}
+                onClick={() => void act(() => setStatus(job.id, "Confirmed"), () => toast.success(`${job.id} confirmed`, { description: "It now appears on the Dispatch board." }))}
               >
                 <CheckCircle2 /> Confirm booking
               </Button>

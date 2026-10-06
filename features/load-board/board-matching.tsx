@@ -9,7 +9,9 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowRight, Bookmark, ChevronDown, ClipboardCopy, ClipboardList, Info, Truck } from "lucide-react";
 import type { AvailableLoad, Customer, LogisticsJob, PaymentTerms } from "@/types";
-import { useAppStore, type BookBoardLoadInput } from "@/lib/store";
+import type { BookBoardLoadInput, BookingResult } from "@/types";
+import { act } from "@/lib/act";
+import { useAppStore } from "@/lib/store";
 import { useBoardMatches, useCapacityViews, useCustomerMap } from "@/hooks/use-data";
 import { getTripMetricsMap } from "@/lib/logistics";
 import { bookingFreight, bookingLeg, isGoodMatch, legOpen, loadShareMessage, placeLabel, routeLine, type BoardMatch, type CapacityView } from "@/lib/load-board";
@@ -160,10 +162,7 @@ function MatchCard({ match, side, onBook }: { match: BoardMatch; side: "load" | 
                     title={`Reserve ${load.id} on ${view.truckLabel}?`}
                     description={`Use this once ${view.post.contact.name} confirms the space. ${kg(load.weightKg)} is marked as used on ${view.post.id}; the load moves to Reserved. Nothing is sent to the partner.`}
                     confirmLabel="Reserve"
-                    onConfirm={() => {
-                      reserve(load.id, view.post.id);
-                      toast.success(`${load.id} reserved on ${view.truckLabel}`, { description: `${kg(match.availableAfter)} left on ${view.post.id}` });
-                    }}
+                    onConfirm={() => void act(() => reserve(load.id, view.post.id), () => toast.success(`${load.id} reserved on ${view.truckLabel}`, { description: `${kg(match.availableAfter)} left on ${view.post.id}` }))}
                   />
                 )}
               </>
@@ -223,7 +222,7 @@ function BookForm({
   customers: Customer[];
   partnerName?: string;
   onClose: () => void;
-  onBook: (input: BookBoardLoadInput) => { jobId: string; created: boolean } | undefined;
+  onBook: (input: BookBoardLoadInput) => Promise<BookingResult>;
   onViewJob: (id: string) => void;
 }) {
   const customerMap = useCustomerMap();
@@ -248,8 +247,9 @@ function BookForm({
   const alreadyOnTrip = !!existingJob?.tripId && existingJob.tripId === trip?.id;
   const customerOptions = [{ value: "new", label: "+ New customer from this post", hint: `${load.contact.name} · ${load.contact.phone}` }, ...customers.map((c) => ({ value: c.id, label: c.name, hint: `${c.id} · ${c.type}` }))];
 
-  const submit = handleSubmit((v) => {
-    const res = onBook({
+  const submit = handleSubmit(async (v) => {
+    let res: BookingResult | undefined;
+    await act(async () => (res = await onBook({
       loadId: load.id,
       capacityId: view?.post.id,
       customerId: v.billTo === "new" ? undefined : v.billTo,
@@ -257,16 +257,17 @@ function BookForm({
       freightCharge: v.freightCharge,
       paymentTerms: v.paymentTerms,
       consignee: { name: v.consigneeName, phone: v.consigneePhone },
-    });
+    })));
     if (!res) return;
+    const booked = res;
     let description = "Awaiting dispatch — assign it to a trip on the Dispatch board.";
     if (trip) {
       const st = useAppStore.getState();
       const m = getTripMetricsMap(st.trips, st.jobs, st.loads, st.deliveries, st.expenses).get(trip.id);
-      const onTrip = st.jobs.find((j) => j.id === res.jobId)?.tripId === trip.id;
+      const onTrip = st.jobs.find((j) => j.id === booked.jobId)?.tripId === trip.id;
       description = onTrip && m ? `On ${trip.id} · ${view!.truckLabel} ${leg === "return" ? "return" : "outbound"} space left: ${kg(m.capacityKg - (leg === "return" ? m.returnKg : m.outboundKg))}` : `Could not add to ${trip.id} — the trip no longer takes cargo on this leg.`;
     }
-    toast.success(res.created ? `${res.jobId} created from ${load.id}` : `${load.id} is already ${res.jobId} — no duplicate created`, { description, action: { label: "View job", onClick: () => onViewJob(res.jobId) } });
+    toast.success(booked.created ? `${booked.jobId} created from ${load.id}` : `${load.id} is already ${booked.jobId} — no duplicate created`, { description, action: { label: "View job", onClick: () => onViewJob(booked.jobId) } });
     onClose();
   });
 

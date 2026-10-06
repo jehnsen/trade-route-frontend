@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { BellOff, CheckCheck, Clock, Construction, RotateCcw, Sparkles } from "lucide-react";
 import type { NotificationKind } from "@/types";
 import { useAppStore } from "@/lib/store";
+import { act } from "@/lib/act";
 import { COMPANY, PLATFORM, STAFF, NOW } from "@/data/company";
 import { AREAS, ROUTES, returnLegName } from "@/data/areas";
 import { BACKHAUL_RATE_PER_KG, MINIMUM_FREIGHT, RATE_CARD } from "@/data/cargo";
@@ -23,6 +24,8 @@ import { NotificationRow, useRoleNotifications } from "@/components/layout/notif
 
 export function SettingsView() {
   const reset = useAppStore((s) => s.resetDemo);
+  const viewer = useAppStore((s) => s.viewer);
+  const demo = !!viewer?.organization.demo;
   return (
     <>
       <PageHeader title="Settings" description={`${PLATFORM.name} configuration for ${COMPANY.name}.`} />
@@ -32,7 +35,7 @@ export function SettingsView() {
           <TabsTrigger value="users">Users & roles</TabsTrigger>
           <TabsTrigger value="routes">Routes & fleet</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="demo">Demo data</TabsTrigger>
+          {demo && <TabsTrigger value="demo">Demo data</TabsTrigger>}
         </TabsList>
         <TabsContent value="company">
           <Card>
@@ -111,13 +114,13 @@ export function SettingsView() {
                     <TableCell>
                       <Badge variant="teal">{ROLE_META[s.role].label}</Badge>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{ROLE_META[s.role].description.split("·")[1]?.trim()}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{ROLE_META[s.role].description}</TableCell>
                     <TableCell className="tabular">{s.phone}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            <p className="border-t px-4 py-3 text-xs text-muted-foreground">Role-based access is simulated in this demo — use the account switcher in the header to preview each role.</p>
+            <p className="border-t px-4 py-3 text-xs text-muted-foreground">Each person signs in with their own account; the API enforces what their role may change. Owners can preview the other desks from the account menu in the header.</p>
           </Card>
         </TabsContent>
         <TabsContent value="routes">
@@ -216,22 +219,24 @@ export function SettingsView() {
             </CardContent>
           </Card>
         </TabsContent>
+        {demo && (
         <TabsContent value="demo">
           <Card>
             <CardHeader>
               <div>
                 <CardTitle>Demo data</CardTitle>
-                <CardDescription>Everything in this workspace is fictional sample data for Lucena Fresh Trading & Logistics.</CardDescription>
+                <CardDescription>Everything in this organization is fictional sample data for {COMPANY.name}.</CardDescription>
               </div>
             </CardHeader>
             <CardContent className="grid gap-3 text-sm">
               <div className="flex items-center gap-2">
-                <Clock className="size-4 text-muted-foreground" /> Demo clock fixed at <b>{fmtDateTime(NOW)}</b>
+                <Clock className="size-4 text-muted-foreground" /> Operations clock: <b>{fmtDateTime(NOW)}</b> (starts at the seed's 7:48 AM and moves two minutes per recorded event)
               </div>
               <div className="flex items-center gap-2">
                 <Sparkles className="size-4 text-muted-foreground" /> TradeLoop go-live: Aug 26, 2026 — balances before that date were migrated from the paper ledger.
               </div>
-              <p className="text-muted-foreground">Jobs, trips, payments and fleet records you create are saved in this browser only. Freight rates and diesel prices are illustrative, not live prices.</p>
+              <p className="text-muted-foreground">Jobs, trips, payments and fleet records are saved on the TradeLoop server and shared with everyone signed in to this organization. Freight rates and diesel prices are illustrative, not live prices.</p>
+              {viewer?.canViewAs && (
               <ConfirmDialog
                 trigger={
                   <Button variant="outline" className="justify-self-start">
@@ -239,17 +244,16 @@ export function SettingsView() {
                   </Button>
                 }
                 title="Reset all demo data?"
-                description="All jobs, trips, deliveries, payments and fleet records you created in this browser will be discarded."
+                description="All jobs, trips, deliveries, payments and fleet records created since the seed are discarded for everyone in this organization."
                 confirmLabel="Reset"
                 destructive
-                onConfirm={() => {
-                  reset();
-                  toast.success("Demo data reset");
-                }}
+                onConfirm={() => void act(reset, () => toast.success("Demo data reset"))}
               />
+              )}
             </CardContent>
           </Card>
         </TabsContent>
+        )}
       </Tabs>
     </>
   );
@@ -278,7 +282,7 @@ export function NotificationsCenter() {
         title="Notifications"
         description="Alerts generated from today's jobs, trips, deliveries, fleet records and balances."
         actions={
-          <Button variant="outline" onClick={markAll}>
+          <Button variant="outline" onClick={() => void act(markAll)}>
             <CheckCheck /> Mark all as read
           </Button>
         }
@@ -295,7 +299,7 @@ export function NotificationsCenter() {
           <EmptyState icon={BellOff} title="You're all caught up" description="No notifications in this category." />
         ) : (
           shown.map((n) => (
-            <Link key={n.id} href={n.href} onClick={() => markRead(n.id)} className="block">
+            <Link key={n.id} href={n.href} onClick={() => !n.read && void act(() => markRead(n.id))} className="block">
               <NotificationRow n={n} />
             </Link>
           ))

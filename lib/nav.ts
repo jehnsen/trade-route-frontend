@@ -152,14 +152,14 @@ export const FUTURE_MODULES: FutureModule[] = [
 ];
 
 export const ROLE_META: Record<Role, { label: string; description: string; home: string; icon: LucideIcon }> = {
-  owner: { label: "Owner", description: "Rodel Samonte · full access", home: "/command-center", icon: Sparkles },
-  sales: { label: "Sales", description: "Kristine Ramos · quotes, jobs & customers", home: "/jobs", icon: ClipboardList },
-  dispatcher: { label: "Dispatcher", description: "Noel Pascual · trucks, trips & drivers", home: "/dispatch", icon: Kanban },
-  procurement: { label: "Procurement", description: "Edwin Manalo · backhaul cargo", home: "/backhaul", icon: Undo2 },
-  warehouse: { label: "Warehouse", description: "Bong Esguerra · loading & cargo", home: "/loads", icon: Boxes },
-  accounting: { label: "Accounting", description: "Grace Lontoc · billing & collections", home: "/accounts-receivable", icon: HandCoins },
-  driver: { label: "Driver", description: "Joel Mendoza · Truck 01", home: "/driver", icon: Truck },
-  customer: { label: "Customer", description: "Seaside Grill Bacoor · portal", home: "/my-orders", icon: Store },
+  owner: { label: "Owner", description: "Full access", home: "/command-center", icon: Sparkles },
+  sales: { label: "Sales", description: "Quotes, jobs & customers", home: "/jobs", icon: ClipboardList },
+  dispatcher: { label: "Dispatcher", description: "Trucks, trips & drivers", home: "/dispatch", icon: Kanban },
+  procurement: { label: "Procurement", description: "Backhaul cargo", home: "/backhaul", icon: Undo2 },
+  warehouse: { label: "Warehouse", description: "Loading & cargo", home: "/loads", icon: Boxes },
+  accounting: { label: "Accounting", description: "Billing & collections", home: "/accounts-receivable", icon: HandCoins },
+  driver: { label: "Driver", description: "Driver app: trip, stops & POD", home: "/driver", icon: Truck },
+  customer: { label: "Customer", description: "Customer portal", home: "/my-orders", icon: Store },
 };
 
 const ALL_ITEMS = [...NAV.flatMap((s) => s.items), ...TRADING_NAV];

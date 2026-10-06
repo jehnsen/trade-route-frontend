@@ -7,7 +7,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { CheckCircle2, FileQuestion } from "lucide-react";
 import type { CustomerType } from "@/types";
-import { useAppStore, PORTAL_CUSTOMER_ID } from "@/lib/store";
+import { act } from "@/lib/act";
+import { useAppStore, usePortalCustomerId } from "@/lib/store";
+import { PortalAccountGate } from "@/components/portal/portal-sign-in";
 import { PRODUCTS, productById, productLabel } from "@/data/products";
 import { TODAY } from "@/data/company";
 import { peso } from "@/lib/format";
@@ -34,8 +36,14 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 export function RequestQuote({ productId, qty }: { productId?: string; qty?: number }) {
+  const customerId = usePortalCustomerId();
+  return <PortalAccountGate what="request a wholesale quote">{customerId && <QuoteRequestForm customerId={customerId} productId={productId} qty={qty} />}</PortalAccountGate>;
+}
+
+function QuoteRequestForm({ customerId, productId, qty }: { customerId: string; productId?: string; qty?: number }) {
   const add = useAppStore((s) => s.addQuoteRequest);
-  const customer = useAppStore((s) => s.customers.find((c) => c.id === PORTAL_CUSTOMER_ID));
+  const isCustomer = useAppStore((s) => s.viewer?.role === "customer");
+  const customer = useAppStore((s) => s.customers.find((c) => c.id === customerId));
   const [done, setDone] = React.useState<string | null>(null);
   const p = productId ? PRODUCTS.find((x) => x.id === productId) : undefined;
   const form = useForm<Values>({
@@ -56,10 +64,8 @@ export function RequestQuote({ productId, qty }: { productId?: string; qty?: num
   });
   const e = form.formState.errors;
   const pid = form.watch("productId");
-  const submit = form.handleSubmit((v) => {
-    const id = add({ ...v, customerId: customer && v.businessName === customer.name ? customer.id : undefined });
-    setDone(id);
-  });
+  // A customer's request is always on their own account; staff previewing link it by name.
+  const submit = form.handleSubmit((v) => act(() => add({ ...v, customerId: customer && (isCustomer || v.businessName === customer.name) ? customer.id : undefined }), setDone));
 
   if (done)
     return (

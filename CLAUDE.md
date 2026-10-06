@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**TradeLoop** (repo: `trade-route-frontend`) is a logistics operations platform for Philippine seafood and agricultural trading/logistics businesses. It is a **frontend demo / prototype**: no backend, realistic structured mock data.
+**TradeLoop** (repo: `trade-route-frontend`) is a logistics operations platform for Philippine seafood and agricultural trading/logistics businesses. This repo is the **Next.js app**; the data and workflows live in the **TradeLoop API** (`../../Nodejs backend/tradeloop-backend`, NestJS + PostgreSQL), which seeds realistic, structured, fictional demo data.
 
 The design partner is **Lucena Fresh Trading & Logistics**, a fictional operator based in **Lucena City, Quezon Province**. It runs two 10-wheeler closed vans.
 
@@ -60,26 +60,33 @@ Actual versions (see `package.json`):
 - Recharts 3
 - TanStack Table 8
 - React Hook Form + Zod 4 (`@hookform/resolvers`)
-- Zustand 5 (single app store, persisted to `localStorage`)
+- Zustand 5 (single app store: a cache of the API's data set; only the cart and the owner's "preview as" role are kept in `localStorage`)
 - date-fns 4, sonner (toasts), cmdk (global search), react-day-picker
 
-Do not add a backend unless explicitly requested. Avoid new dependencies.
+Avoid new dependencies. Backend changes go in the API repo.
 
 ---
 
 # Commands
 
 ```bash
-npm run dev          # http://localhost:3000
+npm run dev          # http://localhost:3000 (needs the API on TRADELOOP_API_URL, default :4000)
 npm run build        # production build (type-checks)
 npm run typecheck    # tsc --noEmit
-npm run check:seed   # data volumes, trip utilization/profitability, AR aging, relationship checks
-npm run check:flows  # exercises store actions end-to-end and asserts consistency
 ```
 
-`check:flows` covers assigning jobs to trips, POD, payments, quotes, trips and the Load Board. It prints "storage is currently unavailable" warnings from the zustand persist middleware under Node. Those warnings are expected and harmless.
+In the API repo (`../../Nodejs backend/tradeloop-backend`):
 
-After changing the seed, the store or `lib/logistics.ts` / `lib/load-board.ts`, run `typecheck`, `check:seed` and `check:flows`. Extend `scripts/check-flows.ts` when you add a store action that creates or links records.
+```bash
+npm run start:dev    # API on :4000 (Postgres + Redis from docker compose)
+npm run seed         # demo organization "Lucena Fresh" + one login per desk (password DevPassword123!)
+npm run domain:sync  # copy this repo's shared domain files into src/ops/domain (domain:check verifies)
+npm run check:seed   # data volumes, trip utilization/profitability, AR aging, relationship checks
+npm run check:flows  # runs the ops commands end to end on the demo data and asserts consistency
+npm test && npm run test:e2e
+```
+
+After changing `types/index.ts`, `data/{areas,cargo,company,fleet,finance,tenant,products,suppliers}.ts` or `lib/{collections,ops-data,format,calc,selectors,logistics,load-board,backhaul-marketplace}.ts`, run `npm run domain:sync` in the API, then its `typecheck`, `check:seed`, `check:flows` and tests. Extend the API's `scripts/check-flows.ts` when you add a command that creates or links records.
 
 ---
 
@@ -126,13 +133,14 @@ Heavy selectors are wrapped in `memoizeLast` and exposed through hooks in `hooks
 
 ---
 
-# Demo State & Clock
+# Data, API & Clock
 
-- **Demo clock:** `TODAY = "2026-09-25"`, `NOW = "2026-09-25T07:48"`, `TOMORROW = "2026-09-26"` in `data/company.ts`. Anchor all "today" logic to these. Never use `new Date()` for business logic.
-- **Seed:** `data/logistics-seed.ts` generates 30 days of trip history (Aug 26 → Sep 24), today's live operations and tomorrow's plan. It is deterministic. `data/seed.ts` generates the trading data.
-- **Store:** `lib/store.ts` is one Zustand store holding all records and actions. It is persisted as `tradeloop-logistics-demo-v2`. New slices added to `initialData()` and `partialize` pick up seed data in existing browsers through the default shallow merge. Bump the storage `name`/`version` only when a seed change is incompatible with previously persisted data.
-- **Reset:** the **Demo Data** badge calls `resetDemo()`.
-- **Actions:** actions stamp time with the demo clock (`stamp()`), attribute to the current role (`actor()`), generate IDs with `nextSeqId`, and push `notify(...)` notifications where relevant. Follow that pattern.
+- **Clock:** `TODAY`, `NOW`, `TOMORROW` in `data/company.ts` follow the API's operations clock (`setClock`, from every snapshot and command response). In development the API anchors it at the seed's "now", Fri Sep 25, 2026 7:48 AM (`OPS_CLOCK_ANCHOR`), and moves it two minutes per recorded event. Anchor all "today" logic to these; never use `new Date()` for business logic, and never read them at module level (they change after load).
+- **Seed:** the API's `src/ops/seed` generates 30 days of trip history (Aug 26 → Sep 24), today's live operations, tomorrow's plan, the Load Board, the marketplace and the trading data. Deterministic. Owners of demo organizations reset it from the **Demo Data** badge (`resetDemo()` → `POST /ops/demo/reset`).
+- **Store:** `lib/store.ts` holds the organization's whole data set (`OpsData`), loaded once from `GET /ops/snapshot`, kept current by polling `/ops/version`. Each action calls an API command and applies the returned change set (`applyOpsChanges` in `lib/ops-data.ts`). Actions are async; call them through `act()` (`lib/act.ts`) so refused commands toast the API's reason, and disable the submit button while the form is submitting.
+- **Commands (API):** the workflow logic lives in the API (`src/ops/engine/commands.ts`): it stamps time with the operations clock, attributes events to the signed-in user, generates readable IDs with `nextSeqId`, pushes notifications, and enforces the business rules (editable trips, capacity, idempotent bookings, role and ownership checks). Add new workflows there plus an endpoint and DTO, then the store action here.
+- **Tenant registries:** company profile, staff, helpers, trucks, drivers and revenue baselines come with the snapshot (`applyTenantProfile`). `truckById`, `staffById`, `COMPANY`… read them synchronously; screens render only after the data has loaded (the app shell shows a skeleton until then).
+- **Session:** sign-in goes through `/api/session/*` (refresh token in an httpOnly cookie); browser API calls go to `/api/v1/*`, proxied to the API. Roles come from the membership; owners can preview other desks ("Preview as"). Drivers see only their own trips, customers only their own account.
 
 ---
 
@@ -144,36 +152,40 @@ app/
   (public)/       customer ordering portal (trading storefront, Phase 2 preview) + /return-trips (public backhaul page)
   driver/         mobile driver view
   print/          printable delivery receipt / waybill
+  login/          sign-in (lists the seeded demo accounts in development)
+  api/session/    login / refresh / logout route handlers (refresh token in an httpOnly cookie)
 components/
   ui/             shadcn-style primitives (button, badge, form-controls, overlays, primitives, table)
-  layout/         app-shell (sidebar, nav badges, role switcher), global-search, notifications-bell, providers
+  layout/         app-shell (sidebar, nav badges, account menu / preview as), session-gate, global-search, notifications-bell, providers (session bootstrap + sync)
   shared/         PageHeader, KPICard, StatusBadge, TripCard, PodCard, ConfirmDialog, states, …
   data-table/     TanStack DataTable
   charts/         Recharts wrappers
-  portal/         portal shell + product card
-features/<module>/  page-level views and dialogs (jobs, trips, dispatch, load-board, backhaul, finance, fleet, …)
-data/             reference data + generators
-  company.ts      demo clock, company, staff, helpers
+  portal/         portal shell, product card, account gate (sign-in prompt)
+features/<module>/  page-level views and dialogs (auth, jobs, trips, dispatch, load-board, backhaul, finance, fleet, …)
+data/             reference data shared with the API, plus tenant registries
+  company.ts      operations clock (setClock), PLATFORM, COMPANY / STAFF / HELPERS registries
+  fleet.ts        TRUCKS / DRIVERS registries (truckById, driverById)
+  finance.ts      revenue baseline registries
+  tenant.ts       applyTenantProfile (fills the registries from the API)
   areas.ts        areas, places, route templates (RT-…)
   cargo.ts        cargo types, demo rate card (suggestFreight)
-  customers.ts, leads.ts, fleet.ts (trucks, drivers, vehicle documents), finance.ts
-  logistics-seed.ts  logistics generator
-  load-board.ts   trucking partners, board loads, board capacity
-  backhaul-marketplace.ts  marketplace listings and shipper requests (preview)
-  seed.ts, products.ts, suppliers.ts, orders.ts, procurement.ts  trading (Phase 2)
+  products.ts, suppliers.ts  trading reference (Phase 2)
 lib/
   logistics.ts    stop planning, trip metrics, billing, fleet status, customer stats
   load-board.ts   board statuses, capacity views, rule-based matching, share messages
-  backhaul-marketplace.ts  listing views, request statuses, instant quotes, fit checks
-  store.ts        Zustand store + actions
+  backhaul-marketplace.ts  listing views, request statuses, instant quotes, fit checks, shipper views
+  ops-data.ts     OPS_COLLECTIONS, diffOpsData / applyOpsChanges (the API's change sets)
+  collections.ts  memoizeLast, groupBy, sumBy (dependency-free, shared with the API)
+  store.ts        Zustand store: API data cache + async actions (one per API command)
+  session.ts      sign-in state; api/client.ts (fetch wrapper, ApiError), api/session-cookie.ts (server)
+  act.ts          run an action and toast the API's reason when it is refused
   format.ts       peso, pesoCompact, kg, pct, num, date formatters, relativeDay
   domain.ts       domain label helpers (jobLane, tripRouteLine, …)
   nav.ts          sidebar NAV, TRADING_NAV, FUTURE_MODULES, ROLE_META, canAccess
   calc.ts, selectors.ts, portal.ts  trading math and portal helpers
-  utils.ts        cn, memoizeLast, groupBy, sumBy, copyText, downloadCsv
+  utils.ts        cn, copyText, downloadCsv (+ re-exports collections)
 hooks/use-data.ts memoized derived-data hooks
-types/index.ts    all domain types (logistics first, load board, finance, then trading)
-scripts/          check-seed.ts, check-flows.ts
+types/index.ts    all domain types (logistics first, load board, finance, tenant, ops data & API contract, command inputs, then trading)
 docs/             logistics-platform-benefits.md (owner business case), storefront-imagery.md
 ```
 
@@ -208,7 +220,7 @@ The Load Board is for freight and truck space shared in Messenger / Viber GCs, F
   - Statuses: Open, Partially Filled, Full, Departed, Expired, Cancelled. Open / Partially Filled / Full / Departed are derived unless the post was closed.
 - **TruckingPartner** (`TP-nnn`): outside trucking businesses that post in the GCs.
 
-Workflows (store actions):
+Workflows (API commands, called through the store):
 
 - `postBoardLoad`, `postCapacity`, `addTruckingPartner`
 - `bookBoardLoad`: turns a post into a **LogisticsJob + Third-Party Load** (source `Load Board`). If the matched capacity is our trip, it is assigned to that trip, and return-leg cargo then shows on Backhaul. If no customer is picked, it creates a new customer from the poster. It is **idempotent**: re-booking never creates a second job or load, and at most moves the existing job onto a trip.
@@ -242,7 +254,7 @@ The shipper side is public at `/return-trips` (`features/portal/return-trips.tsx
 
 - **Customer** (`CUS-nnn`): contacts, delivery addresses, payment terms (COD, Credit 7/15/30 Days, 50% Down), credit limit, lead source, payment behavior.
 - **Lead** (`LD-nnn`): pipeline New → Contacted → Quoted → Sample Order → Negotiating → Won / Lost. Supports convert to customer.
-- **Roles:** owner, sales, dispatcher, procurement, warehouse, accounting, driver, customer. They are switched from the header account menu (`ROLE_META` in `lib/nav.ts`). Nav visibility and `canAccess` follow each nav item's `roles`. This is demo-level behavior only.
+- **Roles:** owner, sales, dispatcher, procurement, warehouse, accounting, driver, customer. Each comes from the signed-in membership (API roles OWNER/ADMIN → owner, DISPATCHER/OPERATIONS_MANAGER/DRIVER_MANAGER → dispatcher, FINANCE → accounting, SALES, WAREHOUSE, PROCUREMENT, DRIVER, CUSTOMER; `APP_ROLE` in the API). Nav visibility and `canAccess` follow each nav item's `roles`; the API enforces what each role may change. Owners can preview other desks from the account menu. A DRIVER membership links to its driver (`subjectRef` DRV-…), a CUSTOMER one to its customer (CUS-…).
 
 ## Trading (Phase 2 preview)
 
@@ -408,8 +420,8 @@ Before adding a feature, ask whether it improves bookings / jobs, dispatch and t
 6. Keep client components to areas that need client behavior.
 7. No unnecessary dependencies.
 8. Maintain responsive behavior.
-9. After changing shared mock data or store actions, verify related pages and run the check scripts.
-10. Don't leave throwaway scripts (e.g. `scripts/_probe.ts`) in the repo.
+9. After changing seed data, commands or shared domain files, verify related pages and run the API's check scripts.
+10. Don't leave throwaway scripts in either repo.
 
 # Before Completing a Task
 
@@ -417,7 +429,7 @@ Before adding a feature, ask whether it improves bookings / jobs, dispatch and t
 2. Reuse existing data relationships. New records must link both ways.
 3. Implement the UI with loading / empty / error states.
 4. Verify responsive layout.
-5. Run `npm run typecheck`, `npm run check:seed` and `npm run check:flows`.
+5. Run `npm run typecheck` here; when shared domain files or commands changed, run `domain:sync`, `typecheck`, `check:seed`, `check:flows` and the tests in the API.
 6. Check related entity references (job ↔ loads ↔ trip ↔ delivery ↔ invoice ↔ payment ↔ customer ↔ board post).
 7. Check for unrealistic Philippine demo data.
 8. Confirm the workflow still reflects real logistics operations.

@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Plus, Send, Save, Trash2 } from "lucide-react";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useTripMetrics } from "@/hooks/use-data";
 import { SUPPLIERS, supplierById } from "@/data/suppliers";
@@ -61,18 +62,22 @@ export function CreatePODialog({ open, onOpenChange, draft }: { open: boolean; o
   const e = form.formState.errors;
 
   const submit = (status: "Draft" | "Sent") =>
-    form.handleSubmit((vals) => {
+    form.handleSubmit(async (vals) => {
       const trip = vals.tripId ? trips.find((t) => t.id === vals.tripId) : undefined;
       const sup = supplierById(vals.supplierId);
-      const id = createPO({ supplierId: vals.supplierId, items: vals.items, pickupDate: trip?.date ?? vals.pickupDate, status, notes: vals.notes || undefined });
+      await act(async () => {
+      const id = await createPO({ supplierId: vals.supplierId, items: vals.items, pickupDate: trip?.date ?? vals.pickupDate, status, notes: vals.notes || undefined });
       // The pickup rides the trip as plain company-owned cargo; the load does not depend on the PO.
       if (trip)
         for (const i of vals.items) {
           const p = productById(i.productId);
-          createCompanyLoad({ cargoDescription: productLabel(p), cargoCategory: p.category === "seafood" ? "Seafood" : "Produce", quantity: i.quantity, unit: p.unit === "pc" ? "pc" : "kg", weightKg: Math.round(itemLoadKg({ productId: i.productId, quantity: i.quantity })), leg: "return", pickup: { name: sup.pickupLocation, areaId: sup.pickupAreaId }, destination: LUCENA_WAREHOUSE, estimatedValue: Math.round(i.quantity * i.unitCost), handlingNotes: `Company purchase (${id}) — pay supplier on pickup.`, tripId: trip.id });
+          await createCompanyLoad({ cargoDescription: productLabel(p), cargoCategory: p.category === "seafood" ? "Seafood" : "Produce", quantity: i.quantity, unit: p.unit === "pc" ? "pc" : "kg", weightKg: Math.round(itemLoadKg({ productId: i.productId, quantity: i.quantity })), leg: "return", pickup: { name: sup.pickupLocation, areaId: sup.pickupAreaId }, destination: LUCENA_WAREHOUSE, estimatedValue: Math.round(i.quantity * i.unitCost), handlingNotes: `Company purchase (${id}) — pay supplier on pickup.`, tripId: trip.id });
         }
-      toast.success(status === "Draft" ? `${id} saved as draft` : `${id} sent to ${sup.name}`, { description: trip ? `Pickup added as company cargo on ${trip.id} (${truckById(trip.truckId).code})` : undefined });
-      onOpenChange(false);
+      return id;
+      }, (id) => {
+        toast.success(status === "Draft" ? `${id} saved as draft` : `${id} sent to ${sup.name}`, { description: trip ? `Pickup added as company cargo on ${trip.id} (${truckById(trip.truckId).code})` : undefined });
+        onOpenChange(false);
+      });
     })();
 
   return (

@@ -6,6 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { ArrowRight, Boxes, CalendarCheck2, ClipboardCopy, ClipboardList, Eye, Handshake, Info, MoreHorizontal, PackageSearch, Plus, RotateCcw, Scale, Search, Truck, Undo2, Users, XCircle } from "lucide-react";
 import type { AvailableLoad, AvailableLoadStatus, CapacityStatus, LogisticsJob } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useBoardMatches, useCapacityViews, useCustomerMap, useTripMetrics } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
@@ -126,20 +127,14 @@ function LoadActions({ row, on }: { row: LoadRow; on: RowHandlers }) {
             <DropdownMenuSeparator />
             {st === "Looking for Truck" && (
               <DropdownMenuItem
-                onSelect={() => {
-                  setLoadStatus(l.id, "Matching");
-                  toast(`${l.id} marked Matching`, { description: "You're talking to a trucker about it." });
-                }}
+                onSelect={() => void act(() => setLoadStatus(l.id, "Matching"), () => toast(`${l.id} marked Matching`, { description: "You're talking to a trucker about it." }))}
               >
                 <Handshake /> Mark matching
               </DropdownMenuItem>
             )}
             {(st === "Matching" || closed || st === "Reserved") && (
               <DropdownMenuItem
-                onSelect={() => {
-                  setLoadStatus(l.id, "Looking for Truck");
-                  toast(`${l.id} back to Looking for Truck`);
-                }}
+                onSelect={() => void act(() => setLoadStatus(l.id, "Looking for Truck"), () => toast(`${l.id} back to Looking for Truck`))}
               >
                 <RotateCcw /> {closed ? "Reopen" : "Back to looking for truck"}
               </DropdownMenuItem>
@@ -199,15 +194,12 @@ function CapacityActions({ row, on }: { row: CapacityRow; on: RowHandlers }) {
               <Scale /> Update used capacity
             </DropdownMenuItem>
             {p.status === "Full" ? (
-              <DropdownMenuItem onSelect={() => setCapacityStatus(p.id, "Open")}>
+              <DropdownMenuItem onSelect={() => void act(() => setCapacityStatus(p.id, "Open"))}>
                 <RotateCcw /> Reopen — space available again
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem
-                onSelect={() => {
-                  setCapacityStatus(p.id, "Full");
-                  toast(`${p.id} marked full`);
-                }}
+                onSelect={() => void act(() => setCapacityStatus(p.id, "Full"), () => toast(`${p.id} marked full`))}
               >
                 <Boxes /> Mark full
               </DropdownMenuItem>
@@ -215,7 +207,7 @@ function CapacityActions({ row, on }: { row: CapacityRow; on: RowHandlers }) {
           </>
         )}
         {closed ? (
-          <DropdownMenuItem onSelect={() => setCapacityStatus(p.id, "Open")}>
+          <DropdownMenuItem onSelect={() => void act(() => setCapacityStatus(p.id, "Open"))}>
             <RotateCcw /> Reopen
           </DropdownMenuItem>
         ) : (
@@ -736,11 +728,12 @@ export function LoadBoardView({ initialTab, initialQ }: { initialTab?: string; i
           confirmLabel={closing.status === "Cancelled" ? "Cancel post" : closing.status === "Expired" ? "Mark expired" : "Mark booked elsewhere"}
           destructive={closing.status === "Cancelled"}
           onClose={() => setClosing(null)}
-          onConfirm={(reason) => {
-            if (closing.kind === "load") setLoadStatus(closing.id, closing.status, reason ?? (closing.status === "Booked" ? "Booked through another trucker" : undefined));
-            else setCapacityStatus(closing.id, closing.status, reason);
-            toast(`${closing.id} ${closing.status === "Booked" ? "marked booked elsewhere" : closing.status === "Expired" ? "marked expired" : "cancelled"}`);
-          }}
+          onConfirm={(reason) =>
+            void act(
+              () => (closing.kind === "load" ? setLoadStatus(closing.id, closing.status, reason ?? (closing.status === "Booked" ? "Booked through another trucker" : undefined)) : setCapacityStatus(closing.id, closing.status, reason)),
+              () => toast(`${closing.id} ${closing.status === "Booked" ? "marked booked elsewhere" : closing.status === "Expired" ? "marked expired" : "cancelled"}`),
+            )
+          }
         />
       )}
     </>

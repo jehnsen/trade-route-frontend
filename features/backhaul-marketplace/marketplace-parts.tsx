@@ -7,7 +7,9 @@ import { useAppStore } from "@/lib/store";
 import { useCustomerMap } from "@/hooks/use-data";
 import { COMPANY } from "@/data/company";
 import { truckById } from "@/data/fleet";
-import { legRouteLine, requestStatus, type ListingView } from "@/lib/backhaul-marketplace";
+import type { BackhaulListing, ShipperListing } from "@/types";
+import { act } from "@/lib/act";
+import { legRouteLine, requestStatus, type FitView, type ListingView } from "@/lib/backhaul-marketplace";
 import { etaAt, shortArea } from "@/lib/load-board";
 import { deliveryIdForJob, jobTotal } from "@/lib/logistics";
 import { fmtDay, fmtTime, fmtTimeWindow, kg, peso } from "@/lib/format";
@@ -17,11 +19,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { CapacityBar } from "@/components/shared/common";
 import { StatusBadge } from "@/components/shared/status-badge";
 
-const rateLine = (v: ListingView) => (v.listing ? `${peso(v.listing.ratePerKg, true)}/kg · min ${peso(v.listing.minimumCharge)}` : undefined);
-const acceptsLine = (v: ListingView) => (v.listing?.acceptedCargo.length ? v.listing.acceptedCargo.join(", ") : "Any cargo");
+type Terms = { listing?: Pick<BackhaulListing, "ratePerKg" | "minimumCharge" | "acceptedCargo"> };
+const rateLine = (v: Terms) => (v.listing ? `${peso(v.listing.ratePerKg, true)}/kg · min ${peso(v.listing.minimumCharge)}` : undefined);
+const acceptsLine = (v: Terms) => (v.listing?.acceptedCargo.length ? v.listing.acceptedCargo.join(", ") : "Any cargo");
 
 /** Pickup towns on the way home with the truck's planned time in each (a window for shippers). */
-function PickupTimes({ v, shipper = false }: { v: ListingView; shipper?: boolean }) {
+function PickupTimes({ v, shipper = false }: { v: Pick<FitView, "pickupAreas" | "leg">; shipper?: boolean }) {
   return (
     <ul className="flex flex-wrap gap-1.5" aria-label="Pickup times on the way home">
       {v.pickupAreas.map((a) => (
@@ -175,19 +178,13 @@ export function ListingCard({ v, onEdit, onRequests }: { v: ListingView; onEdit:
                   </DropdownMenuItem>
                   {l.status === "Paused" ? (
                     <DropdownMenuItem
-                      onSelect={() => {
-                        setStatus(l.id, "Published");
-                        toast(`${l.id} published again`, { description: "Shippers can request space." });
-                      }}
+                      onSelect={() => void act(() => setStatus(l.id, "Published"), () => toast(`${l.id} published again`, { description: "Shippers can request space." }))}
                     >
                       <Play /> Resume listing
                     </DropdownMenuItem>
                   ) : (
                     <DropdownMenuItem
-                      onSelect={() => {
-                        setStatus(l.id, "Paused");
-                        toast(`${l.id} paused`, { description: "Hidden from shippers. Waiting requests can still be confirmed." });
-                      }}
+                      onSelect={() => void act(() => setStatus(l.id, "Paused"), () => toast(`${l.id} paused`, { description: "Hidden from shippers. Waiting requests can still be confirmed." }))}
                     >
                       <Pause /> Pause — stop new requests
                     </DropdownMenuItem>
@@ -200,10 +197,7 @@ export function ListingCard({ v, onEdit, onRequests }: { v: ListingView; onEdit:
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     variant="destructive"
-                    onSelect={() => {
-                      setStatus(l.id, "Closed");
-                      toast(`${l.id} closed`, { description: pendingCount ? `${pendingCount} waiting request(s) will expire.` : undefined });
-                    }}
+                    onSelect={() => void act(() => setStatus(l.id, "Closed"), () => toast(`${l.id} closed`, { description: pendingCount ? `${pendingCount} waiting request(s) will expire.` : undefined }))}
                   >
                     <XCircle /> Close listing
                   </DropdownMenuItem>
@@ -221,13 +215,13 @@ export function ListingCard({ v, onEdit, onRequests }: { v: ListingView; onEdit:
  * What an outside shipper sees for one listed return leg, here and on the public Return trips page.
  * No trip ids, plate, driver, other cargo or revenue, and truck times only as two-hour windows.
  */
-export function ShipperListingCard({ v, onRequest }: { v: ListingView; onRequest: () => void }) {
-  const truck = truckById(v.trip.truckId);
+/** A listed return leg as shippers see it (no trip, plate, driver or exact times). */
+export function ShipperListingCard({ v, onRequest }: { v: ShipperListing; onRequest: () => void }) {
   return (
     <Card className="h-full gap-3 p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs text-muted-foreground">{fmtDay(v.trip.date)} · return trip to Lucena</div>
+          <div className="text-xs text-muted-foreground">{fmtDay(v.date)} · return trip to Lucena</div>
           <h3 className="mt-0.5 text-[15px] font-semibold">{legRouteLine(v)}</h3>
         </div>
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
@@ -235,7 +229,7 @@ export function ShipperListingCard({ v, onRequest }: { v: ListingView; onRequest
         </span>
       </div>
       <div className="text-xs text-muted-foreground">
-        {COMPANY.shortName} · {truck.vehicleType} ({truck.body}) · arrives Lucena {fmtTimeWindow(v.leg.arrivalAt)}
+        {COMPANY.shortName} · {v.vehicleType} ({v.body}) · arrives Lucena {fmtTimeWindow(v.leg.arrivalAt)}
       </div>
       <div>
         <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">Pickup windows</div>

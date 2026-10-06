@@ -7,6 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { AlertTriangle, Camera, CheckCircle2, Eraser, ImagePlus, PenLine } from "lucide-react";
 import type { Delivery, DeliveryIssueType } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useInvoiceMap } from "@/hooks/use-data";
 import { jobTotal } from "@/lib/logistics";
@@ -86,7 +87,7 @@ export function PodDialog({ delivery, open, onOpenChange, mode = "deliver" }: { 
   const v = watch();
   const e = formState.errors;
   const fileRef = React.useRef<HTMLInputElement>(null);
-  const submit = handleSubmit((vals) => {
+  const submit = handleSubmit(async (vals) => {
     if (mode === "deliver" && !vals.signatureCaptured && vals.photoCount === 0) {
       form.setError("signatureCaptured", { message: "Capture a signature or at least one photo as proof" });
       return;
@@ -101,14 +102,14 @@ export function PodDialog({ delivery, open, onOpenChange, mode = "deliver" }: { 
       driverNotes: vals.driverNotes || undefined,
       customerRemarks: vals.customerRemarks || undefined,
     };
-    if (mode === "upload") {
-      updatePod(delivery.id, pod);
-      toast.success("POD updated", { description: `${vals.photoCount} photo(s) on file for ${delivery.id}.` });
-    } else {
-      markDelivered(delivery.id, pod, vals.cashCollected);
-      toast.success(`${delivery.jobId} delivered`, { description: vals.cashCollected ? `${peso(vals.cashCollected)} COD collected and posted to receivables.` : "POD saved; invoice issued to the customer." });
-    }
-    onOpenChange(false);
+    const done =
+      mode === "upload"
+        ? await act(() => updatePod(delivery.id, pod), () => toast.success("POD updated", { description: `${vals.photoCount} photo(s) on file for ${delivery.id}.` }))
+        : await act(
+            () => markDelivered(delivery.id, pod, vals.cashCollected || undefined),
+            () => toast.success(`${delivery.jobId} delivered`, { description: vals.cashCollected ? `${peso(vals.cashCollected)} COD collected and posted to receivables.` : "POD saved; invoice issued to the customer." }),
+          );
+    if (done) onOpenChange(false);
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -184,7 +185,7 @@ export function PodDialog({ delivery, open, onOpenChange, mode = "deliver" }: { 
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant={mode === "deliver" ? "success" : "default"}>
+            <Button type="submit" variant={mode === "deliver" ? "success" : "default"} disabled={formState.isSubmitting}>
               <CheckCircle2 /> {mode === "upload" ? "Save POD" : "Confirm delivered"}
             </Button>
           </DialogFooter>
@@ -198,6 +199,7 @@ const ISSUE_TYPES: DeliveryIssueType[] = ["Late Arrival", "Damaged Cargo", "Shor
 
 export function ReportIssueDialog({ delivery, open, onOpenChange }: { delivery: Delivery; open: boolean; onOpenChange: (v: boolean) => void }) {
   const report = useAppStore((s) => s.reportDeliveryIssue);
+  const [busy, setBusy] = React.useState(false);
   const [type, setType] = React.useState<DeliveryIssueType>("Late Arrival");
   const [note, setNote] = React.useState("");
   const [failed, setFailed] = React.useState(false);
@@ -244,10 +246,13 @@ export function ReportIssueDialog({ delivery, open, onOpenChange }: { delivery: 
           </Button>
           <Button
             variant={failed ? "destructive" : "default"}
-            onClick={() => {
+            disabled={busy}
+            onClick={async () => {
               if (note.trim().length < 5) return setError("Describe the issue (at least 5 characters)");
-              report(delivery.id, { type, note: note.trim() }, failed);
-              toast.warning(failed ? `${delivery.jobId} marked failed` : `Issue logged on ${delivery.jobId}`, { description: type });
+              setBusy(true);
+              const done = await act(() => report(delivery.id, { type, note: note.trim() }, failed), () => toast.warning(failed ? `${delivery.jobId} marked failed` : `Issue logged on ${delivery.jobId}`, { description: type }));
+              setBusy(false);
+              if (!done) return;
               setNote("");
               setFailed(false);
               onOpenChange(false);

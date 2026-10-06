@@ -9,7 +9,8 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, FileText, Plus, Save, Sparkles, Trash2, Truck } from "lucide-react";
 import type { OrderSource, PaymentTerms } from "@/types";
-import { useAppStore, actorFor } from "@/lib/store";
+import { act } from "@/lib/act";
+import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useSalesCustomerStats, useStock } from "@/hooks/use-data";
 import { PRODUCTS, productById, productLabel } from "@/data/products";
 import { areaName } from "@/data/areas";
@@ -47,7 +48,6 @@ type Values = z.infer<typeof schema>;
 
 export function OrderForm({ initialCustomerId }: { initialCustomerId?: string }) {
   const router = useRouter();
-  const role = useAppStore((s) => s.role);
   const createOrder = useAppStore((s) => s.createOrder);
   const customersList = useAppStore((s) => s.customers);
   const customers = useCustomerMap();
@@ -119,9 +119,9 @@ export function OrderForm({ initialCustomerId }: { initialCustomerId?: string })
   }));
 
   const submit = (mode: "draft" | "confirm") =>
-    handleSubmit((vals) => {
+    handleSubmit(async (vals) => {
       setSubmitting(mode);
-      const id = createOrder({
+      const done = await act(() => createOrder({
         customerId: vals.customerId,
         source: vals.source as OrderSource,
         items: vals.items,
@@ -132,12 +132,13 @@ export function OrderForm({ initialCustomerId }: { initialCustomerId?: string })
         addressId: vals.addressId,
         notes: vals.notes || undefined,
         status: mode === "draft" ? "Draft" : overLimit ? "Pending Confirmation" : "Confirmed",
-        createdBy: actorFor(role),
+      }), (id) => {
+        toast.success(mode === "draft" ? `Draft ${id} saved` : overLimit ? `${id} saved — pending credit approval` : `Order ${id} confirmed`, {
+          description: mode === "draft" ? "You can confirm it later from the Orders list." : "It now appears in Orders, the customer profile and the Dispatch Board.",
+        });
+        router.push(`/orders/${id}`);
       });
-      toast.success(mode === "draft" ? `Draft ${id} saved` : overLimit ? `${id} saved — pending credit approval` : `Order ${id} confirmed`, {
-        description: mode === "draft" ? "You can confirm it later from the Orders list." : "It now appears in Orders, the customer profile and the Dispatch Board.",
-      });
-      router.push(`/orders/${id}`);
+      if (!done) setSubmitting(null);
     })();
 
   const err = formState.errors;

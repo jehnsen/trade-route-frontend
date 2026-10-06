@@ -6,6 +6,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
 import type { LogisticsJob, PaymentMethod } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useInvoiceMap } from "@/hooks/use-data";
 import { invoiceIdForJob, jobTotal } from "@/lib/logistics";
@@ -38,14 +39,18 @@ export function RecordPaymentDialog({ job, open, onOpenChange }: { job: Logistic
   });
   const { register, handleSubmit, formState, control, watch } = form;
   const amount = watch("amount");
-  const submit = handleSubmit((v) => {
+  const submit = handleSubmit(async (v) => {
     if (v.amount > balance + 0.5) {
       form.setError("amount", { message: `Cannot exceed the ${peso(balance)} balance` });
       return;
     }
-    const receipt = record({ invoiceId, jobId: job.id, customerId: job.customerId, amount: v.amount, method: v.method, reference: v.reference, notes: v.notes || undefined });
-    toast.success(`Payment of ${peso(v.amount)} recorded`, { description: `${receipt} · applied to ${invoiceId}` });
-    onOpenChange(false);
+    await act(
+      () => record({ invoiceId, jobId: job.id, customerId: job.customerId, amount: v.amount, method: v.method, reference: v.reference, notes: v.notes || undefined }),
+      (receipt) => {
+        toast.success(`Payment of ${peso(v.amount)} recorded`, { description: `${receipt} · applied to ${invoiceId}` });
+        onOpenChange(false);
+      },
+    );
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -94,7 +99,7 @@ export function RecordPaymentDialog({ job, open, onOpenChange }: { job: Logistic
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={balance <= 0}>
+            <Button type="submit" disabled={balance <= 0 || formState.isSubmitting}>
               <CheckCircle2 /> Record payment
             </Button>
           </DialogFooter>

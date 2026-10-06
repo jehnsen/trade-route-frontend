@@ -6,6 +6,7 @@ import { addYears, format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, FileCheck2, FileText, Paperclip, RefreshCw, Timer } from "lucide-react";
 import type { VehicleDocument } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { TODAY } from "@/data/company";
 import { TRUCKS, DRIVERS, truckById, driverById } from "@/data/fleet";
@@ -99,6 +100,7 @@ function RenewDialog({ doc, onClose }: { doc: VehicleDocument; onClose: () => vo
   const [expiryDate, setExpiryDate] = React.useState(format(addYears(parseISO(doc.expiryDate < TODAY ? TODAY : doc.expiryDate), 1), "yyyy-MM-dd"));
   const [file, setFile] = React.useState<string>(doc.attachment ?? "");
   const [error, setError] = React.useState<string>();
+  const [busy, setBusy] = React.useState(false);
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
@@ -130,11 +132,15 @@ function RenewDialog({ doc, onClose }: { doc: VehicleDocument; onClose: () => vo
             Cancel
           </Button>
           <Button
-            onClick={() => {
+            disabled={busy}
+            onClick={async () => {
               if (expiryDate <= issueDate) return setError("Expiry must be after the issue date");
-              renew(doc.id, { reference, issueDate, expiryDate, attachment: file || undefined });
-              toast.success(`${doc.type} renewed`, { description: `Valid until ${fmtDate(expiryDate)}` });
-              onClose();
+              setBusy(true);
+              await act(() => renew(doc.id, { reference, issueDate, expiryDate, attachment: file || undefined }), () => {
+                toast.success(`${doc.type} renewed`, { description: `Valid until ${fmtDate(expiryDate)}` });
+                onClose();
+              });
+              setBusy(false);
             }}
           >
             <RefreshCw /> Save renewal

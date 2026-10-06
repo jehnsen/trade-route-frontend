@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Bell, CheckCircle2, CircleDollarSign, ClipboardList, Info, Megaphone, PackageCheck, ShoppingCart, Truck, Undo2, Wrench } from "lucide-react";
 import type { AppNotification, NotificationKind } from "@/types";
 import { useAppStore } from "@/lib/store";
+import { act } from "@/lib/act";
 import { cn } from "@/lib/utils";
 import { fmtRelative } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -74,7 +75,7 @@ export function NotificationsBell() {
       <PopoverContent align="end" className="w-[min(92vw,400px)] p-0">
         <div className="flex items-center justify-between border-b px-3 py-2.5">
           <div className="text-sm font-semibold">Notifications</div>
-          <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={markAll}>
+          <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => void act(markAll)}>
             Mark all as read
           </Button>
         </div>
@@ -84,7 +85,7 @@ export function NotificationsBell() {
               key={n.id}
               n={n}
               onClick={() => {
-                markRead(n.id);
+                if (!n.read) void act(() => markRead(n.id));
                 setOpen(false);
                 router.push(n.href);
               }}

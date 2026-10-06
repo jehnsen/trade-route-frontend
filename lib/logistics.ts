@@ -1,5 +1,5 @@
 /**
- * Logistics calculations shared by the seed generator, the store and the UI.
+ * Logistics calculations shared by the API (commands, seed), the store and the UI.
  * Everything here is pure: pass in records, get derived values back.
  */
 import { addMinutes, differenceInCalendarDays, differenceInMinutes, format, parseISO } from "date-fns";
@@ -30,7 +30,7 @@ import { TODAY } from "@/data/company";
 import { areaById, LUCENA_WAREHOUSE, placeByName, routeById } from "@/data/areas";
 import { truckById, driverUnavailability } from "@/data/fleet";
 import { agingBucket, isCreditTerms, termsDays, type AgingBucket } from "./calc";
-import { memoizeLast, sumBy } from "./utils";
+import { memoizeLast, sumBy } from "./collections";
 
 const fmt = (d: Date) => format(d, "yyyy-MM-dd'T'HH:mm");
 const plus = (dt: string, m: number) => fmt(addMinutes(parseISO(dt), m));

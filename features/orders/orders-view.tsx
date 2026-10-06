@@ -8,6 +8,7 @@ import { addDays, format, parseISO } from "date-fns";
 import { CheckCircle2, Download, Eye, MoreHorizontal, Plus, Wallet, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import type { AreaId, Order, OrderSource, OrderStatus, PaymentStatus } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useSalesInvoiceMap } from "@/hooks/use-data";
 import { TODAY } from "@/data/company";
@@ -156,10 +157,7 @@ export function OrdersView({ initial }: { initial: { date?: string; status?: str
                 </DropdownMenuItem>
                 {(o.status === "Pending Confirmation" || o.status === "Draft") && (
                   <DropdownMenuItem
-                    onSelect={() => {
-                      setStatus(o.id, "Confirmed");
-                      toast.success(`${o.id} confirmed`);
-                    }}
+                    onSelect={() => void act(() => setStatus(o.id, "Confirmed"), () => toast.success(`${o.id} confirmed`))}
                   >
                     <CheckCircle2 /> Confirm
                   </DropdownMenuItem>

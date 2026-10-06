@@ -8,7 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowRight, CheckCircle2, Info, Radio, Send, Truck, XCircle } from "lucide-react";
-import type { AreaId, BackhaulBookingRequest, CargoCategory } from "@/types";
+import type { AreaId, BackhaulBookingRequest, CargoCategory, ShipperListing, ShipperRequestInput } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useListingViews } from "@/hooks/use-data";
 import { AREAS, areaName, PLACES } from "@/data/areas";
@@ -57,16 +58,16 @@ export function PublishListingDialog({ tripId, onClose }: { tripId?: string; onC
   const minimum = watch("minimumCharge");
   const editing = !!preset?.listing;
 
-  const submit = handleSubmit((x) => {
-    const id = publish({ ...x, restrictions: x.restrictions?.trim() || undefined });
-    if (!id) {
-      toast.error("That return leg no longer takes cargo.");
-      return;
-    }
-    const leg = views.get(x.tripId)!;
-    toast.success(editing && preset?.status === "Published" ? `${id} terms updated` : `${leg.truckLabel}'s return leg is listed (${id})`, { description: `${kg(leg.openKg)} open · ${rateLabel(x.ratePerKg)}` });
-    onClose();
-  });
+  const submit = handleSubmit((x) =>
+    act(
+      () => publish({ ...x, restrictions: x.restrictions?.trim() || undefined }),
+      (id) => {
+        const leg = views.get(x.tripId)!;
+        toast.success(editing && preset?.status === "Published" ? `${id} terms updated` : `${leg.truckLabel}'s return leg is listed (${id})`, { description: `${kg(leg.openKg)} open · ${rateLabel(x.ratePerKg)}` });
+        onClose();
+      },
+    ),
+  );
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -179,24 +180,25 @@ function ReviewBody({ req, v, onClose }: { req: BackhaulBookingRequest; v?: List
   const errors = formState.errors;
   const customerOptions = [{ value: "new", label: "+ New customer from this request", hint: `${req.shipper.businessName} · ${req.shipper.phone}` }, ...customers.map((c) => ({ value: c.id, label: c.name, hint: `${c.id} · ${c.type}` }))];
 
-  const submit = handleSubmit((x) => {
-    const res = confirm({ requestId: req.id, customerId: x.billTo === "new" ? undefined : x.billTo, freightCharge: x.freightCharge, paymentTerms: x.paymentTerms });
-    if (!res) {
-      toast.error(`Could not confirm ${req.id}`, { description: "The return leg is closed or no longer has the space." });
-      return;
-    }
-    toast.success(`${req.id} confirmed as ${res.jobId}`, { description: `On ${v!.truckLabel}'s return leg (${v!.trip.id}). Call ${req.shipper.contactName} to confirm the pickup time.`, action: { label: "View job", onClick: () => router.push(`/jobs/${res.jobId}`) } });
-    onClose();
-  });
+  const submit = handleSubmit((x) =>
+    act(
+      () => confirm({ requestId: req.id, customerId: x.billTo === "new" ? undefined : x.billTo, freightCharge: x.freightCharge, paymentTerms: x.paymentTerms }),
+      (res) => {
+        toast.success(`${req.id} confirmed as ${res.jobId}`, { description: `On ${v!.truckLabel}'s return leg (${v!.trip.id}). Call ${req.shipper.contactName} to confirm the pickup time.`, action: { label: "View job", onClick: () => router.push(`/jobs/${res.jobId}`) } });
+        onClose();
+      },
+    ),
+  );
 
   const submitDecline = () => {
     if (reason.trim().length < 3) {
       setReasonError("Tell the shipper why");
       return;
     }
-    decline(req.id, reason.trim());
-    toast(`${req.id} declined`, { description: `Let ${req.shipper.contactName} know: ${reason.trim()}` });
-    onClose();
+    void act(() => decline(req.id, reason.trim()), () => {
+      toast(`${req.id} declined`, { description: `Let ${req.shipper.contactName} know: ${reason.trim()}` });
+      onClose();
+    });
   };
 
   return (
@@ -381,21 +383,22 @@ const requestSchema = z.object({
 type RequestValues = z.infer<typeof requestSchema>;
 
 /** Pickup options for a leg: our known pickup points on the route, plus "any address in <town>". */
-function pickupOptions(v: ListingView) {
+function pickupOptions(v: Pick<ShipperListing, "pickupAreas">) {
   return v.pickupAreas.flatMap((a) => [...PLACES.filter((p) => p.areaId === a).map((p) => ({ value: `place:${p.name}`, label: p.name, area: a })), { value: `area:${a}`, label: `Other address in ${areaName(a)}`, area: a }]);
 }
 
-export function RequestSpaceDialog({ tripId, onClose, onSubmitted }: { tripId: string; onClose: () => void; onSubmitted: (id: string) => void }) {
-  const v = useListingViews().get(tripId);
-  const request = useAppStore((s) => s.requestBackhaulSpace);
-  const pickups = v ? pickupOptions(v) : [];
+/**
+ * A shipper's request for space on a listed return leg. Used on the public Return trips page and in
+ * the marketplace's shipper preview; `onSubmit` sends it (public API or dispatch's own account).
+ */
+export function RequestSpaceDialog({ listing: v, onClose, onSubmit, onSubmitted }: { listing: ShipperListing; onClose: () => void; onSubmit: (input: ShipperRequestInput) => Promise<string>; onSubmitted: (id: string) => void }) {
+  const pickups = pickupOptions(v);
   const form = useForm<RequestValues>({
     resolver: zodResolver(requestSchema),
-    defaultValues: { businessName: "", contactName: "", phone: "", pickup: pickups[0]?.value ?? "", pickupAddress: "", dropoffArea: "lucena", dropoffAddress: "", cargoKey: "red-onion", quantity: 40, weightKg: 1000, readyTime: v ? `${etaAt(v.leg, v.pickupAreas[0] ?? "lucena").slice(11, 13)}:00` : "12:00", notes: "" },
+    defaultValues: { businessName: "", contactName: "", phone: "", pickup: pickups[0]?.value ?? "", pickupAddress: "", dropoffArea: "lucena", dropoffAddress: "", cargoKey: "red-onion", quantity: 40, weightKg: 1000, readyTime: `${etaAt(v.leg, v.pickupAreas[0] ?? "lucena").slice(11, 13)}:00`, notes: "" },
   });
   const { register, control, handleSubmit, watch, setValue, formState } = form;
   const errors = formState.errors;
-  if (!v?.listing) return null;
   const listing = v.listing;
 
   const cargo = CARGO_TYPES.find((c) => c.key === watch("cargoKey"));
@@ -413,17 +416,17 @@ export function RequestSpaceDialog({ tripId, onClose, onSubmitted }: { tripId: s
     dropoff: { name: watch("businessName") || areaName(watch("dropoffArea") as AreaId), areaId: watch("dropoffArea") as AreaId },
     weightKg: Number.isFinite(weight) ? weight : 0,
     cargoCategory: cargo?.category ?? "General Cargo",
-    readyAt: `${v.trip.date}T${timeRe.test(watch("readyTime")) ? watch("readyTime") : "00:00"}`,
+    readyAt: `${v.date}T${timeRe.test(watch("readyTime")) ? watch("readyTime") : "00:00"}`,
   };
   const fit = draft.weightKg > 0 ? checkRequest(draft, v, { shipper: true }) : undefined;
   const blocked = fit?.checks.some((c) => c.result === "fail" && (c.rule === "capacity" || c.rule === "cargo"));
   const quote = draft.weightKg > 0 ? marketplaceQuote(listing, draft.weightKg) : 0;
 
-  const submit = handleSubmit((x) => {
+  const submit = handleSubmit(async (x) => {
     const c = CARGO_TYPES.find((t) => t.key === x.cargoKey)!;
     const dropArea = x.dropoffArea as AreaId;
-    const id = request({
-      listingId: listing.id,
+    await act(() => onSubmit({
+      listingId: v.listingId,
       shipper: { businessName: x.businessName.trim(), contactName: x.contactName.trim(), phone: x.phone.trim() },
       pickup: toPickup(x.pickup, x.pickupAddress),
       dropoff: { name: x.businessName.trim(), areaId: dropArea, address: `${x.dropoffAddress.trim()}, ${areaName(dropArea)}` },
@@ -432,22 +435,19 @@ export function RequestSpaceDialog({ tripId, onClose, onSubmitted }: { tripId: s
       quantity: x.quantity,
       unit: c.unit,
       weightKg: x.weightKg,
-      readyAt: `${v.trip.date}T${x.readyTime}`,
+      readyAt: `${v.date}T${x.readyTime}`,
       notes: x.notes?.trim() || undefined,
+    }), (id) => {
+      toast.success(`Request ${id} sent`, { description: `Instant quote ${peso(quote)}. Dispatch confirms by phone before pickup.` });
+      onSubmitted(id);
     });
-    if (!id) {
-      toast.error("This return leg can't take that request anymore", { description: "It may have filled up or closed. Try another trip." });
-      return;
-    }
-    toast.success(`Request ${id} sent`, { description: `Instant quote ${peso(quote)}. Dispatch confirms by phone before pickup.` });
-    onSubmitted(id);
   });
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Request space · return trip to Lucena, {fmtDay(v.trip.date)}</DialogTitle>
+          <DialogTitle>Request space · return trip to Lucena, {fmtDay(v.date)}</DialogTitle>
           <DialogDescription>
             {legRouteLine(v)} · {kg(v.openKg)} open · {rateLabel(listing.ratePerKg)}, minimum {peso(listing.minimumCharge)}
           </DialogDescription>
@@ -462,7 +462,7 @@ export function RequestSpaceDialog({ tripId, onClose, onSubmitted }: { tripId: s
           <Field label="Mobile number" htmlFor="rs-phone" error={errors.phone?.message} required>
             <Input id="rs-phone" inputMode="tel" autoComplete="tel" placeholder="09xx xxx xxxx" {...register("phone")} aria-invalid={!!errors.phone} />
           </Field>
-          <Field label="Cargo ready by" htmlFor="rs-ready" error={errors.readyTime?.message} hint={`On ${fmtDay(v.trip.date)}`} required>
+          <Field label="Cargo ready by" htmlFor="rs-ready" error={errors.readyTime?.message} hint={`On ${fmtDay(v.date)}`} required>
             <Input id="rs-ready" type="time" {...register("readyTime")} aria-invalid={!!errors.readyTime} />
           </Field>
           <Field label="Pickup point" htmlFor="rs-pickup" error={errors.pickup?.message} required>

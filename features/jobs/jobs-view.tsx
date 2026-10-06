@@ -8,6 +8,7 @@ import { addDays, format, parseISO } from "date-fns";
 import { Ban, CheckCircle2, ClipboardList, Download, Eye, MoreHorizontal, PackageCheck, Plus, Route, SlidersHorizontal, Timer, Truck, Wallet, X, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { JobStatus, LogisticsJob, PaymentStatus } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useInvoiceMap } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
@@ -115,10 +116,7 @@ export function JobsView({ initialTab, initialQ }: { initialTab?: string; initia
             </DropdownMenuItem>
             {(j.status === "Inquiry" || j.status === "Quoted") && (
               <DropdownMenuItem
-                onSelect={() => {
-                  setStatus(j.id, "Confirmed");
-                  toast.success(`${j.id} confirmed`);
-                }}
+                onSelect={() => void act(() => setStatus(j.id, "Confirmed"), () => toast.success(`${j.id} confirmed`))}
               >
                 <CheckCircle2 /> Confirm booking
               </DropdownMenuItem>

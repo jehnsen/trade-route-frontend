@@ -6,6 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { Plus, Truck } from "lucide-react";
 import type { POStatus, PurchaseOrder } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { supplierById } from "@/data/suppliers";
 import { productById, productLabel } from "@/data/products";
@@ -169,12 +170,12 @@ function PODetail({ po }: { po: PurchaseOrder }) {
       <Separator />
       <div className="flex flex-wrap gap-2">
         {next && (
-          <Button onClick={() => { setStatus(po.id, next.to); toast.success(`${po.id}: ${next.to}`); }}>
+          <Button onClick={() => void act(() => setStatus(po.id, next.to), () => toast.success(`${po.id}: ${next.to}`))}>
             {next.label}
           </Button>
         )}
         {!["Received", "Partially Received", "Cancelled", "Picked Up"].includes(po.status) && (
-          <Button variant="outline" className="text-destructive" onClick={() => { setStatus(po.id, "Cancelled"); toast(`${po.id} cancelled`); }}>
+          <Button variant="outline" className="text-destructive" onClick={() => void act(() => setStatus(po.id, "Cancelled"), () => toast(`${po.id} cancelled`))}>
             Cancel PO
           </Button>
         )}

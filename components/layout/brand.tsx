@@ -34,7 +34,7 @@ export function Logo({
             tone === "light" ? "text-muted-foreground" : "text-sidebar-muted",
           )}
         >
-          {storefront ? "Wholesale. Delivered." : "Lucena Fresh Trading"}
+          {storefront ? "Wholesale. Delivered." : "Trading & Logistics"}
         </span>
       </span>
     </span>

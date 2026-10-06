@@ -9,6 +9,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Calculator, CheckCircle2, FileQuestion, Plus, Sparkles, Trash2 } from "lucide-react";
 import type { CargoCategory, Customer, JobSource, Leg, PaymentTerms, Place, TruckRequirement } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerMap, useCustomerStats } from "@/hooks/use-data";
 import { TODAY, TOMORROW } from "@/data/company";
@@ -179,12 +180,12 @@ export function JobForm({ initialCustomerId }: { initialCustomerId?: string }) {
   };
 
   const submit = (mode: "inquiry" | "confirm") =>
-    handleSubmit((vals) => {
+    handleSubmit(async (vals) => {
       const c = customers.get(vals.customerId)!;
       const p = resolvePlace(vals.pickupKey, c)!;
       const d = resolvePlace(vals.dropoffKey, c)!;
       setSubmitting(mode);
-      const id = createJob({
+      const done = await act(() => createJob({
         customerId: vals.customerId,
         source: vals.source,
         leg: vals.leg,
@@ -201,11 +202,13 @@ export function JobForm({ initialCustomerId }: { initialCustomerId?: string }) {
         instructions: vals.instructions || undefined,
         notes: [vals.notes, hasOverdue && mode === "confirm" ? "Customer has overdue freight — confirm with accounting before dispatch." : ""].filter(Boolean).join(" ") || undefined,
         status: mode === "inquiry" ? "Inquiry" : vals.pickupDate <= TOMORROW ? "Awaiting Dispatch" : "Confirmed",
+      }), (id) => {
+        toast.success(mode === "inquiry" ? `Inquiry ${id} saved` : `Job ${id} confirmed`, {
+          description: mode === "inquiry" ? "Send a quote or confirm it once the customer agrees." : "It now appears on the Dispatch board and the customer profile.",
+        });
+        router.push(`/jobs/${id}`);
       });
-      toast.success(mode === "inquiry" ? `Inquiry ${id} saved` : `Job ${id} confirmed`, {
-        description: mode === "inquiry" ? "Send a quote or confirm it once the customer agrees." : "It now appears on the Dispatch board and the customer profile.",
-      });
-      router.push(`/jobs/${id}`);
+      if (!done) setSubmitting(null);
     })();
 
   const customerOptions = customersList

@@ -5,9 +5,12 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { CalendarClock, Pause, Pencil, Play, Plus, Printer, Trash2, Truck } from "lucide-react";
 import type { Order, StandingOrder, Weekday } from "@/types";
-import { useAppStore, PORTAL_CUSTOMER_ID, useHydrated } from "@/lib/store";
+import { act } from "@/lib/act";
+import { useAppStore, usePortalCustomerId, useHydrated } from "@/lib/store";
+import { PortalAccountGate } from "@/components/portal/portal-sign-in";
 import { useSalesCustomerStats, useSalesInvoices } from "@/hooks/use-data";
 import { PRODUCTS, productById, productLabel } from "@/data/products";
+import { TOMORROW } from "@/data/company";
 import { truckById } from "@/data/fleet";
 import { orderTotal } from "@/lib/calc";
 import { orderSummary } from "@/lib/domain";
@@ -41,6 +44,11 @@ const STATUS_VARIANT: Record<string, "info" | "success" | "warning" | "teal" | "
 };
 
 export function MyOrders({ initialTab }: { initialTab?: string }) {
+  const customerId = usePortalCustomerId();
+  return <PortalAccountGate what="see your orders">{customerId && <AccountOrders customerId={customerId} initialTab={initialTab} />}</PortalAccountGate>;
+}
+
+function AccountOrders({ customerId, initialTab }: { customerId: string; initialTab?: string }) {
   const hydrated = useHydrated((s) => s.hydrated);
   const orders = useAppStore((s) => s.orders);
   const quotes = useAppStore((s) => s.quoteRequests);
@@ -50,16 +58,16 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
   const trips = useAppStore((s) => s.trips);
   const standing = useAppStore((s) => s.standingOrders);
   const setSO = useAppStore((s) => s.setStandingOrderStatus);
-  const customer = useAppStore((s) => s.customers.find((c) => c.id === PORTAL_CUSTOMER_ID))!;
-  const invoices = useSalesInvoices().filter((i) => i.customerId === PORTAL_CUSTOMER_ID);
-  const stats = useSalesCustomerStats().get(PORTAL_CUSTOMER_ID)!;
+  const customer = useAppStore((s) => s.customers.find((c) => c.id === customerId))!;
+  const invoices = useSalesInvoices().filter((i) => i.customerId === customerId);
+  const stats = useSalesCustomerStats().get(customerId)!;
   const [editing, setEditing] = React.useState<StandingOrder | "new" | null>(null);
 
-  const mine = orders.filter((o) => o.customerId === PORTAL_CUSTOMER_ID && o.status !== "Draft").sort((a, b) => b.deliveryDate.localeCompare(a.deliveryDate) || b.createdAt.localeCompare(a.createdAt));
-  const myDeliveries = deliveries.filter((d) => d.customerId === PORTAL_CUSTOMER_ID).sort((a, b) => b.eta.localeCompare(a.eta));
-  const myQuotes = quotes.filter((q) => q.customerId === PORTAL_CUSTOMER_ID || q.businessName === customer.name);
-  const myPayments = payments.filter((p) => p.customerId === PORTAL_CUSTOMER_ID).sort((a, b) => b.date.localeCompare(a.date));
-  const mySO = standing.filter((s) => s.customerId === PORTAL_CUSTOMER_ID);
+  const mine = orders.filter((o) => o.customerId === customerId && o.status !== "Draft").sort((a, b) => b.deliveryDate.localeCompare(a.deliveryDate) || b.createdAt.localeCompare(a.createdAt));
+  const myDeliveries = deliveries.filter((d) => d.customerId === customerId).sort((a, b) => b.eta.localeCompare(a.eta));
+  const myQuotes = quotes.filter((q) => q.customerId === customerId || q.businessName === customer.name);
+  const myPayments = payments.filter((p) => p.customerId === customerId).sort((a, b) => b.date.localeCompare(a.date));
+  const mySO = standing.filter((s) => s.customerId === customerId);
   const upcoming = mine.filter((o) => ["Waiting Confirmation", "Confirmed", "Scheduled", "In Transit"].includes(customerStatus(o)));
 
   if (!hydrated)
@@ -169,7 +177,7 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
           {myDeliveries.length === 0 && <EmptyState title="No shipments yet" className="md:col-span-2" />}
           {myDeliveries.slice(0, 10).map((d) => {
             const job = jobs.find((x) => x.id === d.jobId);
-            const t = trips.find((x) => x.id === d.tripId)!;
+            const t = trips.find((x) => x.id === d.tripId);
             return (
               <Card key={d.id} className="gap-2 p-4">
                 <div className="flex justify-between gap-2">
@@ -177,7 +185,7 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
                   <StatusBadge status={d.status} />
                 </div>
                 <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <Truck className="size-4" /> {truckById(t.truckId).code} · {fmtDay(t.date)} · ETA {fmtTime(d.eta)}
+                  <Truck className="size-4" /> {t && truckById(t.truckId) ? `${truckById(t.truckId).code} · ` : ""}{fmtDay(d.eta.slice(0, 10))} · ETA {fmtTime(d.eta)}
                   {d.completedAt && ` · delivered ${fmtTime(d.completedAt)}`}
                 </div>
                 <div className="text-sm">
@@ -262,11 +270,11 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
                   {so.status !== "cancelled" && (
                     <div className="flex flex-wrap gap-1">
                       {so.status === "active" ? (
-                        <Button size="sm" variant="outline" onClick={() => { setSO(so.id, "paused"); toast.success(`${so.day} order paused`); }}>
+                        <Button size="sm" variant="outline" onClick={() => void act(() => setSO(so.id, "paused"), () => toast.success(`${so.day} order paused`))}>
                           <Pause /> Pause
                         </Button>
                       ) : (
-                        <Button size="sm" variant="outline" onClick={() => { setSO(so.id, "active"); toast.success(`${so.day} order resumed`); }}>
+                        <Button size="sm" variant="outline" onClick={() => void act(() => setSO(so.id, "active"), () => toast.success(`${so.day} order resumed`))}>
                           <Play /> Resume
                         </Button>
                       )}
@@ -283,7 +291,7 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
                         description="No more weekly orders will be generated for this day."
                         confirmLabel="Cancel standing order"
                         destructive
-                        onConfirm={() => { setSO(so.id, "cancelled"); toast.success("Standing order cancelled"); }}
+                        onConfirm={() => void act(() => setSO(so.id, "cancelled"), () => toast.success("Standing order cancelled"))}
                       />
                     </div>
                   )}
@@ -293,7 +301,7 @@ export function MyOrders({ initialTab }: { initialTab?: string }) {
           )}
         </TabsContent>
       </Tabs>
-      {editing && <StandingOrderDialog so={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} />}
+      {editing && <StandingOrderDialog customerId={customerId} so={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
@@ -308,7 +316,7 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
   );
 }
 
-function StandingOrderDialog({ so, onClose }: { so?: StandingOrder; onClose: () => void }) {
+function StandingOrderDialog({ customerId, so, onClose }: { customerId: string; so?: StandingOrder; onClose: () => void }) {
   const save = useAppStore((s) => s.saveStandingOrder);
   const [day, setDay] = React.useState<Weekday>(so?.day ?? "Monday");
   const [lines, setLines] = React.useState(so?.lines ?? [{ productId: "P-SUG-J", quantity: 80 }]);
@@ -316,9 +324,10 @@ function StandingOrderDialog({ so, onClose }: { so?: StandingOrder; onClose: () 
   const submit = () => {
     const bad = lines.find((l) => !l.productId || l.quantity < productById(l.productId).moq);
     if (bad) return setError(`Each line needs a product and at least the minimum order (${bad.productId ? qty(productById(bad.productId).moq, productById(bad.productId).unit) : "choose a product"}).`);
-    save({ id: so?.id, customerId: PORTAL_CUSTOMER_ID, day, lines, status: so?.status ?? "active", startDate: so?.startDate ?? "2026-09-28", notes: so?.notes });
-    toast.success(so ? "Standing order updated" : `Standing order for every ${day} created`);
-    onClose();
+    void act(() => save({ id: so?.id, customerId, day, lines, status: so?.status ?? "active", startDate: so?.startDate ?? TOMORROW, notes: so?.notes }), () => {
+      toast.success(so ? "Standing order updated" : `Standing order for every ${day} created`);
+      onClose();
+    });
   };
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>

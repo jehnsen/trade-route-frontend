@@ -22,6 +22,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { truckById, driverById } from "@/data/fleet";
 import { DELIVERY_DONE, minutesLate } from "@/lib/logistics";
@@ -120,10 +121,7 @@ export function DeliveryDetail({ id }: { id: string }) {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  markArrived(d.id);
-                  toast.success(`Arrived at ${job.dropoff.name}`);
-                }}
+                onClick={() => void act(() => markArrived(d.id), () => toast.success(`Arrived at ${job.dropoff.name}`))}
               >
                 <MapPin /> Mark arrived
               </Button>

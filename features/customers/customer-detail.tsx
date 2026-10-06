@@ -6,6 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { CalendarClock, ClipboardList, FileText, MessageCircle, Pause, Phone, Play, Plus, Route, Send, UserRound } from "lucide-react";
 import type { FreightQuote, Invoice, LogisticsJob, Payment, StandingOrder } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { useCustomerStats, useInvoices } from "@/hooks/use-data";
 import { productById } from "@/data/products";
@@ -301,7 +302,7 @@ export function CustomerDetail({ id }: { id: string }) {
                   </CardHeader>
                   <CardContent className="grid gap-2">
                     {cStanding.map((so) => (
-                      <StandingRow key={so.id} so={so} onStatus={(st) => { setSO(so.id, st); toast.success(`Standing order ${st === "active" ? "resumed" : st}`); }} />
+                      <StandingRow key={so.id} so={so} onStatus={(st) => void act(() => setSO(so.id, st), () => toast.success(`Standing order ${st === "active" ? "resumed" : st}`))} />
                     ))}
                   </CardContent>
                 </Card>

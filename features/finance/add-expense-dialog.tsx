@@ -6,6 +6,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import type { ExpenseCategory } from "@/types";
+import { act } from "@/lib/act";
 import { useAppStore } from "@/lib/store";
 import { TODAY } from "@/data/company";
 import { truckById } from "@/data/fleet";
@@ -36,12 +37,16 @@ export function AddExpenseDialog({ open, onOpenChange, tripId }: { open: boolean
   const form = useForm<Values>({ resolver: zodResolver(schema), values: { category: "Toll", amount: 0, description: "", paidTo: "", date: TODAY, tripId: tripId ?? "", receiptRef: "" } });
   const e = form.formState.errors;
   const category = form.watch("category");
-  const submit = form.handleSubmit((v) => {
+  const submit = form.handleSubmit(async (v) => {
     const trip = v.tripId ? trips.find((t) => t.id === v.tripId) : undefined;
-    add({ date: v.date, category: v.category, amount: v.amount, description: v.description, paidTo: v.paidTo, tripId: trip?.id, truckId: trip?.truckId, driverId: trip?.driverId, receiptRef: v.receiptRef || undefined });
-    toast.success(`${v.category} expense of ${peso(v.amount)} recorded`, { description: trip ? `Charged to ${trip.id}` : undefined });
-    form.reset();
-    onOpenChange(false);
+    await act(
+      () => add({ date: v.date, category: v.category, amount: v.amount, description: v.description, paidTo: v.paidTo, tripId: trip?.id, truckId: trip?.truckId, driverId: trip?.driverId, receiptRef: v.receiptRef || undefined }),
+      () => {
+        toast.success(`${v.category} expense of ${peso(v.amount)} recorded`, { description: trip ? `Charged to ${trip.id}` : undefined });
+        form.reset();
+        onOpenChange(false);
+      },
+    );
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -113,7 +118,7 @@ export function AddExpenseDialog({ open, onOpenChange, tripId }: { open: boolean
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={form.formState.isSubmitting}>
               <Plus /> Record expense
             </Button>
           </DialogFooter>

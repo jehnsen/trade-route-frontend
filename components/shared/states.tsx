@@ -28,7 +28,7 @@ export function PageSkeleton() {
   );
 }
 
-/** Shows a skeleton while persisted demo data rehydrates, then a friendly not-found state. */
+/** Shows a skeleton while the organization's data loads, then a friendly not-found state. */
 export function RecordNotFound({ kind, id, backHref, backLabel }: { kind: string; id: string; backHref: string; backLabel: string }) {
   const hydrated = useHydrated((s) => s.hydrated);
   if (!hydrated) return <PageSkeleton />;

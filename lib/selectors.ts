@@ -1,12 +1,14 @@
 /**
  * Trading module selectors (product sales, stock). Logistics selectors live in lib/logistics.ts.
  */
-import type { Customer, InventoryBatch, Order, PurchaseOrder, SalesInvoice, SalesPayment } from "@/types";
+import type { Customer, InventoryBatch, Order, ProductStock, PurchaseOrder, SalesInvoice, SalesPayment } from "@/types";
+
+export type { ProductStock };
 import { TODAY } from "@/data/company";
 import { PRODUCTS, productById } from "@/data/products";
 import { SALES_LIFETIME_BASELINE } from "@/data/finance";
 import { agingBucket, buildSalesInvoices, itemNetKg, orderBilledAmount, orderCost, type AgingBucket } from "./calc";
-import { memoizeLast } from "./utils";
+import { memoizeLast } from "./collections";
 
 export const OPEN_STATUSES = ["Pending Confirmation", "Confirmed", "Preparing", "Ready for Dispatch"] as const;
 export const isOpen = (o: Order) => (OPEN_STATUSES as readonly string[]).includes(o.status);
@@ -64,19 +66,6 @@ export const getSalesCustomerStats = memoizeLast((customers: Customer[], orders:
 });
 
 // ─── Inventory ──────────────────────────────────────────────────────────────
-export interface ProductStock {
-  productId: string;
-  onHand: number;
-  damaged: number;
-  reserved: number;
-  demand: number;
-  available: number;
-  incoming: number;
-  inTransit: number;
-  value: number;
-  shortage: number;
-}
-
 export const getStockMap = memoizeLast((inventory: InventoryBatch[], orders: Order[], pos: PurchaseOrder[]) => {
   const m = new Map<string, ProductStock>();
   for (const p of PRODUCTS) m.set(p.id, { productId: p.id, onHand: 0, damaged: 0, reserved: 0, demand: 0, available: 0, incoming: 0, inTransit: 0, value: 0, shortage: 0 });

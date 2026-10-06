@@ -5,32 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** Cache the last result of a pure function keyed on argument identity (for zustand slices). */
-export function memoizeLast<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
-  let lastArgs: A | undefined;
-  let lastResult: R;
-  return (...args: A) => {
-    if (lastArgs && args.length === lastArgs.length && args.every((a, i) => a === lastArgs![i])) return lastResult;
-    lastArgs = args;
-    lastResult = fn(...args);
-    return lastResult;
-  };
-}
-
-export function groupBy<T, K extends string | number>(items: T[], key: (t: T) => K): Record<K, T[]> {
-  const out = {} as Record<K, T[]>;
-  for (const it of items) {
-    const k = key(it);
-    (out[k] ??= []).push(it);
-  }
-  return out;
-}
-
-export function sumBy<T>(items: T[], fn: (t: T) => number) {
-  let s = 0;
-  for (const it of items) s += fn(it);
-  return s;
-}
+export { groupBy, memoizeLast, sumBy } from "./collections";
 
 /** Copy text to the clipboard; falls back to a hidden textarea where the async API is blocked. */
 export async function copyText(text: string) {
